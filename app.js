@@ -28,8 +28,12 @@ $("plateInput").onchange=async e=>{
   const f=e.target.files[0]; if(!f)return;
   try{
     st($("vehicleStatus"),"warn","Recognising plate…");
-    const fd=new FormData();fd.append("image",f,"plate.jpg");
-    const out=await api("/anpr",{method:"POST",body:fd});
+    const imageBase64=await fileToBase64(f);
+    const out=await api("/anpr",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({image_base64:imageBase64,vehicle:true})
+    });
     $("reg").value=regClean(out.registration||"");
     st($("vehicleStatus"),out.confidence>=85?"good":"warn",`ANPR: ${out.registration||"No plate"} • confidence ${out.confidence??"?"}%`);
     if(out.vehicle){
@@ -39,6 +43,19 @@ $("plateInput").onchange=async e=>{
     summary();
   }catch(err){st($("vehicleStatus"),"bad",err.message)}
 };
+
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error("Could not read image."));
+    reader.onload=()=>{
+      const result=String(reader.result||"");
+      const comma=result.indexOf(",");
+      resolve(comma>=0?result.slice(comma+1):result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 $("getLocation").onclick=()=>{
  if(!navigator.geolocation)return st($("gpsStatus"),"bad","Geolocation unavailable.");
