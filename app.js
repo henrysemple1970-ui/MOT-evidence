@@ -1,194 +1,78 @@
 
-const state = {
-  reg: "", vin: "", mileage: "", coords: null, photos: {}, submitted: false
-};
+const S={photos:{},coords:null,vehicle:null,vinVerified:false,mileageChecked:false};
+const $=id=>document.getElementById(id);
+const regClean=v=>v.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
+const vinClean=v=>v.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,"").slice(0,17);
+function st(el,k,m){el.className="status "+k;el.textContent=m}
+function backend(){return ($("backend").value||"").replace(/\/$/,"")}
+function save(){localStorage.setItem("motBackend",backend());st($("backendStatus"),"good","Backend saved on this device.")}
+$("backend").value=localStorage.getItem("motBackend")||"";
+$("saveBackend").onclick=save;
 
-const $ = id => document.getElementById(id);
-const cleanReg = v => v.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
-const cleanVIN = v => v.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,"").slice(0,17);
-
-function status(el, kind, msg){
-  el.className = "status " + kind;
-  el.textContent = msg;
+async function api(path,opt={}){
+  if(!backend()) throw new Error("Enter the secure backend URL first.");
+  const r=await fetch(backend()+path,opt);
+  const txt=await r.text(); let body={}; try{body=JSON.parse(txt)}catch{body={message:txt}}
+  if(!r.ok) throw new Error(body.error||body.message||`Request failed (${r.status})`);
+  return body;
 }
-function updateSummary(){
-  state.reg = cleanReg($("reg").value);
-  state.vin = cleanVIN($("vin").value);
-  state.mileage = $("mileage").value.replace(/\D/g,"").slice(0,8);
-  $("reg").value = state.reg;
-  $("vin").value = state.vin;
-  $("mileage").value = state.mileage;
-  const rows = [
-    ["Registration", state.reg || "Not set"],
-    ["VIN", state.vin || "Not confirmed"],
-    ["Mileage", state.mileage ? Number(state.mileage).toLocaleString()+" miles" : "Not confirmed"],
-    ["GPS", state.coords ? `${state.coords.lat.toFixed(6)}, ${state.coords.lon.toFixed(6)}` : "Not captured"],
-    ["Photos", `${Object.keys(state.photos).length} / 3`],
-  ];
-  $("summary").innerHTML = rows.map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
+function summary(){
+  $("reg").value=regClean($("reg").value); $("vin").value=vinClean($("vin").value); $("mileage").value=$("mileage").value.replace(/\D/g,"").slice(0,8);
+  const rows=[["Registration",$("reg").value||"Not set"],["VIN",$("vin").value||"Not confirmed"],["Mileage",$("mileage").value?Number($("mileage").value).toLocaleString()+" miles":"Not confirmed"],["VIN check",S.vinVerified?"Verified":"Not verified"],["MOT mileage check",S.mileageChecked?"Checked":"Not checked"],["GPS",S.coords?`${S.coords.lat.toFixed(6)}, ${S.coords.lon.toFixed(6)}`:"Not captured"],["Photos",`${Object.keys(S.photos).length} / 3`]];
+  $("summary").innerHTML=rows.map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
 }
-["reg","vin","mileage"].forEach(id => $(id).addEventListener("input", updateSummary));
+["reg","vin","mileage"].forEach(x=>$(x).addEventListener("input",summary)); summary();
 
-$("demoReg").onclick = () => {
-  $("reg").value = "AB12CDE";
-  state.reg = "AB12CDE";
-  status($("vehicleStatus"), "good", "Demo vehicle loaded: AB12 CDE.");
-  updateSummary();
-};
-
-$("scanPlate").onclick = () => {
-  if (!state.reg) {
-    status($("vehicleStatus"), "warn", "Prototype ANPR hook ready. For now, enter the registration manually or use Demo vehicle.");
-  } else {
-    status($("vehicleStatus"), "good", `Registration confirmed: ${state.reg}`);
-  }
-};
-
-$("getLocation").onclick = () => {
-  if (!navigator.geolocation) return status($("gpsStatus"), "bad", "Geolocation is not supported on this device.");
-  status($("gpsStatus"), "warn", "Requesting location…");
-  navigator.geolocation.getCurrentPosition(
-    p => {
-      state.coords = {lat:p.coords.latitude, lon:p.coords.longitude, acc:p.coords.accuracy};
-      status($("gpsStatus"), "good", `GPS captured • ±${Math.round(p.coords.accuracy)} m`);
-      updateSummary();
-    },
-    e => status($("gpsStatus"), "bad", "Location permission was not granted."),
-    {enableHighAccuracy:true, timeout:12000, maximumAge:0}
-  );
-};
-
-document.querySelectorAll("button[data-photo]").forEach(btn=>{
-  btn.onclick = () => $("p"+btn.dataset.photo).click();
-});
-
-for(let n=1;n<=3;n++){
-  $("p"+n).addEventListener("change", async e=>{
-    const file = e.target.files[0]; if(!file) return;
-    if(!state.coords){
-      status($("gpsStatus"), "warn", "Capture GPS before final submission.");
-    }
-    const type = n===1 ? "VEHICLE" : n===2 ? "VIN" : "MILEAGE";
-    const result = await watermark(file, type, n);
-    state.photos[n] = result.blob;
-    $("i"+n).src = result.url;
-    $("i"+n).classList.remove("hidden");
-    $("b"+n).classList.add("done");
-    $("b"+n).textContent = "✓";
-
-    if(n===2 && !$("vin").value){
-      status($("vinStatus"), "warn", "VIN OCR hook ready. Enter/confirm the 17-character VIN for this browser prototype.");
-    }
-    if(n===3 && !$("mileage").value){
-      status($("mileageStatus"), "warn", "Mileage OCR hook ready. Enter/confirm the odometer reading.");
-    }
-    updateSummary();
-  });
-}
-
-async function watermark(file, type, num){
-  const img = await fileToImage(file);
-  const maxW = 1800;
-  const scale = Math.min(1, maxW / img.width);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
-
-  const now = new Date();
-  const gps = state.coords ? `${state.coords.lat.toFixed(6)}, ${state.coords.lon.toFixed(6)}` : "GPS PENDING";
-  const lines = [
-    "MOT PHOTO EVIDENCE",
-    `REG: ${cleanReg($("reg").value) || "NOT SET"}`,
-    `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`,
-    `GPS: ${gps}`,
-    `PHOTO ${num} — ${type}`
-  ];
-
-  const font = Math.max(24, Math.round(canvas.width/42));
-  const pad = Math.round(font*.65), lineH = Math.round(font*1.25);
-  const boxH = lines.length*lineH + pad*2;
-  ctx.fillStyle="rgba(0,0,0,.65)";
-  ctx.fillRect(0,canvas.height-boxH,canvas.width,boxH);
-  ctx.font=`600 ${font}px -apple-system, sans-serif`;
-  ctx.fillStyle="white";
-  lines.forEach((t,i)=>ctx.fillText(t,pad,canvas.height-boxH+pad+font+i*lineH));
-  const blob = await new Promise(r=>canvas.toBlob(r,"image/jpeg",0.9));
-  return {blob, url:URL.createObjectURL(blob)};
-}
-
-function fileToImage(file){
-  return new Promise((resolve,reject)=>{
-    const img = new Image();
-    img.onload=()=>resolve(img); img.onerror=reject;
-    img.src=URL.createObjectURL(file);
-  });
-}
-
-function validate(){
-  updateSummary();
-  const errors=[];
-  if(!state.reg) errors.push("registration");
-  if(Object.keys(state.photos).length!==3) errors.push("all three photos");
-  if(state.vin.length!==17) errors.push("confirmed 17-character VIN");
-  if(!state.mileage) errors.push("confirmed mileage");
-  if(!state.coords) errors.push("GPS location");
-  return errors;
-}
-
-$("submitBtn").onclick = async () => {
-  const errors=validate();
-  if(errors.length) return status($("submitStatus"),"bad","Cannot submit: missing "+errors.join(", ")+".");
-  const endpoint = $("uploadUrl").value.trim();
-  status($("submitStatus"),"warn","Submitting evidence…");
-
+$("scanPlate").onclick=()=>$("plateInput").click();
+$("plateInput").onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
   try{
-    let ref;
-    if(endpoint){
-      const fd = new FormData();
-      fd.append("registration",state.reg);
-      fd.append("vin",state.vin);
-      fd.append("mileage",state.mileage);
-      fd.append("latitude",state.coords.lat);
-      fd.append("longitude",state.coords.lon);
-      Object.entries(state.photos).forEach(([n,b])=>fd.append(`photo${n}`,b,`mot-photo-${n}.jpg`));
-      const res = await fetch(endpoint,{method:"POST",body:fd});
-      if(!res.ok) throw new Error("Upload failed");
-      const body = await res.json().catch(()=>({}));
-      ref = body.reference || body.id || "SERVER-CONFIRMED";
-    }else{
-      await new Promise(r=>setTimeout(r,700));
-      ref = "DEMO-"+Date.now().toString().slice(-8);
+    st($("vehicleStatus"),"warn","Recognising plate…");
+    const fd=new FormData();fd.append("image",f,"plate.jpg");
+    const out=await api("/anpr",{method:"POST",body:fd});
+    $("reg").value=regClean(out.registration||"");
+    st($("vehicleStatus"),out.confidence>=85?"good":"warn",`ANPR: ${out.registration||"No plate"} • confidence ${out.confidence??"?"}%`);
+    if(out.vehicle){
+      S.vehicle=out.vehicle;
+      $("vehicleDetails").innerHTML=Object.entries(out.vehicle).slice(0,8).map(([a,b])=>`<div>${a}</div><div><b>${b??""}</b></div>`).join("");
     }
-
-    state.submitted=true;
-    clearPhotosOnly();
-    status($("submitStatus"),"good",`Evidence successfully uploaded • Reference ${ref} • Local photographs removed.`);
-    updateSummary();
-  }catch(e){
-    status($("submitStatus"),"bad","Upload was not confirmed. Local photographs have been retained for retry.");
-  }
+    summary();
+  }catch(err){st($("vehicleStatus"),"bad",err.message)}
 };
 
-function clearPhotosOnly(){
-  for(let n=1;n<=3;n++){
-    if($("i"+n).src) URL.revokeObjectURL($("i"+n).src);
-    $("i"+n).removeAttribute("src");
-    $("i"+n).classList.add("hidden");
-    $("p"+n).value="";
-    $("b"+n).classList.remove("done");
-    $("b"+n).textContent=n;
-  }
-  state.photos={};
+$("getLocation").onclick=()=>{
+ if(!navigator.geolocation)return st($("gpsStatus"),"bad","Geolocation unavailable.");
+ st($("gpsStatus"),"warn","Requesting location…");
+ navigator.geolocation.getCurrentPosition(p=>{S.coords={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy};st($("gpsStatus"),"good",`GPS captured • ±${Math.round(p.coords.accuracy)} m`);summary()},()=>st($("gpsStatus"),"bad","Location permission not granted."),{enableHighAccuracy:true,maximumAge:0,timeout:12000});
+};
+
+document.querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>$("p"+b.dataset.p).click());
+for(let n=1;n<=3;n++) $("p"+n).onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ const kind=n===1?"VEHICLE":n===2?"VIN":"MILEAGE";
+ const wm=await watermark(f,kind,n);S.photos[n]=wm.blob;$("i"+n).src=wm.url;$("i"+n).classList.remove("hidden");$("b"+n).classList.add("done");$("b"+n).textContent="✓";summary();
+};
+async function watermark(file,kind,num){
+ const img=await toImg(file), max=1800, sc=Math.min(1,max/img.width), c=document.createElement("canvas");c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);const x=c.getContext("2d");x.drawImage(img,0,0,c.width,c.height);
+ const gps=S.coords?`${S.coords.lat.toFixed(6)}, ${S.coords.lon.toFixed(6)}`:"GPS PENDING";const lines=["MOT PHOTO EVIDENCE",`REG: ${regClean($("reg").value)||"NOT SET"}`,`${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,`GPS: ${gps}`,`PHOTO ${num} — ${kind}`];
+ const fs=Math.max(24,Math.round(c.width/42)),pad=Math.round(fs*.65),lh=Math.round(fs*1.25),bh=lines.length*lh+pad*2;x.fillStyle="rgba(0,0,0,.68)";x.fillRect(0,c.height-bh,c.width,bh);x.font=`600 ${fs}px -apple-system,sans-serif`;x.fillStyle="#fff";lines.forEach((t,i)=>x.fillText(t,pad,c.height-bh+pad+fs+i*lh));
+ const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));return{blob,url:URL.createObjectURL(blob)}
 }
+function toImg(f){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(f)})}
 
-$("clearBtn").onclick=()=>{
-  clearPhotosOnly();
-  state.vin=""; state.mileage="";
-  $("vin").value=""; $("mileage").value="";
-  status($("submitStatus"),"good","Local evidence cleared from this browser session.");
-  updateSummary();
+$("verifyVin").onclick=async()=>{
+ const vin=vinClean($("vin").value),reg=regClean($("reg").value);if(vin.length!==17)return st($("vinStatus"),"bad","VIN must contain 17 valid characters.");
+ try{st($("vinStatus"),"warn","Checking VIN against MOT records…");const out=await api(`/mot/vin/${encodeURIComponent(vin)}`);const found=regClean(out.registration||out.registrationNumber||out.vehicle?.registration||"");S.vinVerified=!!found&&found===reg;st($("vinStatus"),S.vinVerified?"good":"bad",S.vinVerified?`VIN verified for ${reg}.`:`Possible wrong vehicle: VIN record shows ${found||"no registration returned"}.`);summary()}catch(e){S.vinVerified=false;st($("vinStatus"),"bad",e.message);summary()}
 };
 
-updateSummary();
+$("checkMileage").onclick=async()=>{
+ const reg=regClean($("reg").value),cur=Number($("mileage").value);if(!reg||!cur)return st($("mileageStatus"),"bad","Enter registration and confirmed mileage.");
+ try{st($("mileageStatus"),"warn","Checking previous MOT mileage…");const out=await api(`/mot/registration/${encodeURIComponent(reg)}`);const tests=out.motTests||out.motTestDueDate&&out.motTests||out.vehicle?.motTests||[];const vals=(tests||[]).map(t=>({v:Number(String(t.odometerValue??t.odometer?.value??"").replace(/\D/g,"")),u:(t.odometerUnit??t.odometer?.unit??"mi").toLowerCase(),d:t.completedDate??t.testDate??""})).filter(x=>x.v>0);vals.sort((a,b)=>String(b.d).localeCompare(String(a.d)));if(!vals.length){S.mileageChecked=true;st($("mileageStatus"),"warn","No usable previous MOT mileage was returned.");summary();return}let prev=vals[0].v;if(vals[0].u.startsWith("km"))prev=Math.round(prev*0.621371);const diff=cur-prev;S.mileageChecked=true;st($("mileageStatus"),diff>=0?"good":"bad",diff>=0?`Previous ${prev.toLocaleString()} mi • current is ${diff.toLocaleString()} mi higher.`:`WARNING: current mileage is ${Math.abs(diff).toLocaleString()} mi LOWER than the previous MOT reading (${prev.toLocaleString()} mi).`);summary()}catch(e){S.mileageChecked=false;st($("mileageStatus"),"bad",e.message);summary()}
+};
+
+$("submit").onclick=async()=>{
+ summary();const missing=[];if(!regClean($("reg").value))missing.push("registration");if(Object.keys(S.photos).length!==3)missing.push("3 photos");if(vinClean($("vin").value).length!==17)missing.push("VIN");if(!$("mileage").value)missing.push("mileage");if(!S.coords)missing.push("GPS");if(missing.length)return st($("submitStatus"),"bad","Missing: "+missing.join(", "));
+ try{st($("submitStatus"),"warn","Uploading evidence…");const fd=new FormData();fd.append("registration",regClean($("reg").value));fd.append("vin",vinClean($("vin").value));fd.append("mileage",$("mileage").value);fd.append("latitude",S.coords.lat);fd.append("longitude",S.coords.lon);Object.entries(S.photos).forEach(([n,b])=>fd.append("photo"+n,b,`mot-photo-${n}.jpg`));const out=await api("/submit",{method:"POST",body:fd});if(!out.confirmed)throw new Error("Server did not confirm receipt.");clearPhotos();st($("submitStatus"),"good",`Evidence confirmed • reference ${out.reference||"CONFIRMED"} • local photos removed.`);summary()}catch(e){st($("submitStatus"),"bad",`Upload not confirmed: ${e.message}. Local photos retained for retry.`)}
+};
+function clearPhotos(){for(let n=1;n<=3;n++){if($("i"+n).src)URL.revokeObjectURL($("i"+n).src);$("i"+n).removeAttribute("src");$("i"+n).classList.add("hidden");$("p"+n).value="";$("b"+n).classList.remove("done");$("b"+n).textContent=n}S.photos={}}
+$("clear").onclick=()=>{clearPhotos();st($("submitStatus"),"good","Local photos cleared.");summary()}
