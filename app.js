@@ -95,7 +95,7 @@ function update(){
 
 update();
 
-/* ---------------- ROBUST PHOTO 1 OCR ---------------- */
+/* ---------------- UK PLATE OCR ---------------- */
 
 function normalisePlateText(value){
   return String(value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
@@ -134,25 +134,9 @@ function weightedPlateScore(expected,candidate){
     let score=0;
     for(let i=0;i<expected.length;i++){
       if(expected[i]===candidate[i])score+=1;
-      else if(charsEquivalent(expected[i],candidate[i]))score+=0.8;
+      else if(charsEquivalent(expected[i],candidate[i]))score+=0.85;
     }
     return score/expected.length;
-  }
-
-  if(Math.abs(expected.length-candidate.length)===1){
-    let best=0;
-    if(candidate.length>expected.length){
-      for(let skip=0;skip<candidate.length;skip++){
-        const c=candidate.slice(0,skip)+candidate.slice(skip+1);
-        if(c.length===expected.length)best=Math.max(best,weightedPlateScore(expected,c)*0.85);
-      }
-    }else{
-      for(let skip=0;skip<expected.length;skip++){
-        const e=expected.slice(0,skip)+expected.slice(skip+1);
-        if(e.length===candidate.length)best=Math.max(best,weightedPlateScore(e,candidate)*0.85);
-      }
-    }
-    return best;
   }
 
   return 0;
@@ -160,31 +144,24 @@ function weightedPlateScore(expected,candidate){
 
 function extractCandidates(rawText,expectedLength){
   const upper=String(rawText||"").toUpperCase();
-  const tokens=(upper.match(/[A-Z0-9]{1,10}/g)||[])
-    .map(normalisePlateText)
-    .filter(Boolean);
+  const compact=normalisePlateText(upper);
+  const out=new Set();
 
-  const candidates=new Set(tokens);
+  const tokens=(upper.match(/[A-Z0-9]{2,8}/g)||[]).map(normalisePlateText);
+  tokens.forEach(t=>out.add(t));
 
   for(let i=0;i<tokens.length;i++){
-    for(let j=i+1;j<=Math.min(i+3,tokens.length-1);j++){
+    for(let j=i+1;j<=Math.min(i+2,tokens.length-1);j++){
       const joined=tokens.slice(i,j+1).join("");
-      if(joined.length>=Math.max(2,expectedLength-1) &&
-         joined.length<=expectedLength+1){
-        candidates.add(joined);
-      }
+      if(joined.length===expectedLength)out.add(joined);
     }
   }
 
-  const compact=normalisePlateText(upper);
-  for(const len of [expectedLength-1,expectedLength,expectedLength+1]){
-    if(len<2)continue;
-    for(let i=0;i+len<=compact.length;i++){
-      candidates.add(compact.slice(i,i+len));
-    }
+  for(let i=0;i+expectedLength<=compact.length;i++){
+    out.add(compact.slice(i,i+expectedLength));
   }
 
-  return [...candidates];
+  return [...out];
 }
 
 function fileToImage(file){
@@ -196,14 +173,21 @@ function fileToImage(file){
   });
 }
 
-function makePreprocessedCanvas(img,cropMode){
+function cropCanvas(img,mode){
   let sx=0,sy=0,sw=img.width,sh=img.height;
 
-  if(cropMode==="plate"){
-    sx=Math.round(img.width*0.15);
-    sy=Math.round(img.height*0.42);
-    sw=Math.round(img.width*0.70);
-    sh=Math.round(img.height*0.42);
+  if(mode==="plate-wide"){
+    sx=Math.round(img.width*0.12);
+    sy=Math.round(img.height*0.46);
+    sw=Math.round(img.width*0.76);
+    sh=Math.round(img.height*0.30);
+  }
+
+  if(mode==="plate-tight"){
+    sx=Math.round(img.width*0.22);
+    sy=Math.round(img.height*0.52);
+    sw=Math.round(img.width*0.56);
+    sh=Math.round(img.height*0.20);
   }
 
   const maxW=1800;
@@ -216,24 +200,34 @@ function makePreprocessedCanvas(img,cropMode){
   const ctx=c.getContext("2d",{willReadFrequently:true});
   ctx.drawImage(img,sx,sy,sw,sh,0,0,c.width,c.height);
 
-  const imageData=ctx.getImageData(0,0,c.width,c.height);
-  const d=imageData.data;
+  return c;
+}
+
+function preprocessCanvas(source,threshold){
+  const c=document.createElement("canvas");
+  c.width=source.width;
+  c.height=source.height;
+
+  const ctx=c.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(source,0,0);
+
+  const img=ctx.getImageData(0,0,c.width,c.height);
+  const d=img.data;
 
   for(let i=0;i<d.length;i+=4){
     const gray=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
 
-    // Strong contrast boost for dark plate text on a bright plate.
-    let v=(gray-128)*1.8+128;
+    let v=(gray-128)*2.1+128;
     v=Math.max(0,Math.min(255,v));
 
-    // Mild thresholding while retaining anti-aliased edges.
-    if(v>205)v=255;
-    else if(v<60)v=0;
+    if(threshold!==null){
+      v=v>=threshold?255:0;
+    }
 
     d[i]=d[i+1]=d[i+2]=v;
   }
 
-  ctx.putImageData(imageData,0,0);
+  ctx.putImageData(img,0,0);
   return c;
 }
 
@@ -242,59 +236,67 @@ async function runPlateOCR(source){
     throw new Error("OCR library is not available.");
   }
 
-  const result=await Tesseract.recognize(source,"eng",{
-    logger:()=>{}
-  });
+  const result=await Tesseract.recognize(
+    source,
+    "eng",
+    {
+      logger:()=>{},
+      tessedit_char_whitelist:"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+      preserve_interword_spaces:"1"
+    }
+  );
 
   return result?.data?.text||"";
 }
 
 async function verifyRegistrationInPhoto(file,enteredRegistration){
   const expected=normalisePlateText(enteredRegistration);
-
-  if(!expected){
-    return {ok:false,reason:"Enter the registration before taking Photo 1."};
-  }
+  if(!expected)return {ok:false,reason:"Enter registration first."};
 
   const img=await fileToImage(file);
 
-  const fullCanvas=makePreprocessedCanvas(img,"full");
-  const plateCanvas=makePreprocessedCanvas(img,"plate");
+  const regions=[
+    cropCanvas(img,"plate-wide"),
+    cropCanvas(img,"plate-tight"),
+    cropCanvas(img,"full")
+  ];
 
-  const texts=[];
+  const passes=[];
 
-  // Pass 1: original image.
-  try{texts.push(await runPlateOCR(file))}catch{}
-
-  // Pass 2: enhanced whole image.
-  try{texts.push(await runPlateOCR(fullCanvas))}catch{}
-
-  // Pass 3: enhanced likely plate region.
-  try{texts.push(await runPlateOCR(plateCanvas))}catch{}
-
-  const allCandidates=[];
-  for(const text of texts){
-    allCandidates.push(...extractCandidates(text,expected.length));
+  for(const region of regions){
+    passes.push(region);
+    passes.push(preprocessCanvas(region,null));
+    passes.push(preprocessCanvas(region,110));
+    passes.push(preprocessCanvas(region,140));
+    passes.push(preprocessCanvas(region,170));
   }
 
-  const unique=[...new Set(allCandidates)];
+  const texts=[];
+  for(const p of passes){
+    try{
+      const t=await runPlateOCR(p);
+      if(t)texts.push(t);
+    }catch{}
+  }
+
+  const candidates=[];
+  for(const t of texts){
+    candidates.push(...extractCandidates(t,expected.length));
+  }
 
   let best={candidate:"",score:0};
 
-  for(const c of unique){
+  for(const c of [...new Set(candidates)]){
     const score=weightedPlateScore(expected,c);
     if(score>best.score)best={candidate:c,score};
   }
 
-  // Slightly lower than before because multiple OCR passes are now used.
-  const ok=best.score>=0.78;
-
   return {
-    ok,
+    ok:best.score>=0.80,
     expected,
     detected:best.candidate,
     score:best.score,
-    rawText:texts.join(" | ")
+    raw:texts.join(" | ")
   };
 }
 
@@ -356,14 +358,14 @@ for(let n=1;n<=3;n++){
             "bad",
             `Registration not verified. Entered: ${check.expected}. `+
             `Best OCR reading: ${check.detected||"none"}. `+
-            `Score: ${Math.round(check.score*100)}%.`
+            `Match: ${Math.round(check.score*100)}%.`
           );
           e.target.value="";
           update();
           return;
         }
 
-        if(check.detected && check.detected!==check.expected){
+        if(check.detected!==check.expected){
           st(
             "s1",
             "good",
@@ -383,13 +385,8 @@ for(let n=1;n<=3;n++){
       }
     }
 
-    if(n===2){
-      st("s2","warn","VIN photo captured. Confirm the 17-character VIN below.");
-    }
-
-    if(n===3){
-      st("s3","warn","Mileage photo captured. Confirm the odometer reading below.");
-    }
+    if(n===2)st("s2","warn","VIN photo captured. Confirm the 17-character VIN below.");
+    if(n===3)st("s3","warn","Mileage photo captured. Confirm the odometer reading below.");
 
     try{
       const out=await watermark(f,n);
@@ -415,7 +412,6 @@ for(let n=1;n<=3;n++){
 
 async function watermark(file,n){
   const img=await fileToImage(file);
-
   const c=document.createElement("canvas");
   const sc=Math.min(1,1800/img.width);
 
@@ -452,7 +448,6 @@ async function watermark(file,n){
   lines.forEach((t,i)=>x.fillText(t,pad,c.height-bh+pad+fs+i*lh));
 
   const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));
-
   return{blob,url:URL.createObjectURL(blob)};
 }
 
