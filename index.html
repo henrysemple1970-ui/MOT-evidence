@@ -1,9 +1,56 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b1220"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="MOT Evidence"><link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./icon.svg"><title>MOT Evidence</title><style>
-:root{--card:#111c2c;--line:#27364d;--txt:#f6f8fb;--muted:#a9b4c5;--blue:#2f7df4;--green:#35c46a;--red:#ff5a67}*{box-sizing:border-box}body{margin:0;background:linear-gradient(#07101d,#0b1422);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{max-width:760px;margin:auto;padding:16px}h1{font-size:28px}.sub,.tiny{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin:14px 0}label{display:block;color:var(--muted);font-size:13px;margin:10px 0 6px}input{width:100%;background:#091321;border:1px solid #34455f;color:white;border-radius:12px;padding:14px;font-size:17px}button{width:100%;border:0;border-radius:13px;padding:14px 16px;font-size:17px;font-weight:700;background:var(--blue);color:white;margin-top:10px}button.secondary{background:#26364d}button.danger{background:#7d2630}.hidden{display:none!important}.thumb{width:100%;border-radius:12px;border:1px solid var(--line);margin-top:10px}.status{padding:12px;border-radius:12px;margin:10px 0;font-size:14px}.good{background:rgba(53,196,106,.14);border:1px solid rgba(53,196,106,.4)}.warn{background:rgba(246,183,60,.14);border:1px solid rgba(246,183,60,.4)}.bad{background:rgba(255,90,103,.12);border:1px solid rgba(255,90,103,.4)}.grid{display:grid;grid-template-columns:1fr auto;gap:8px 16px;font-size:14px}.grid div:nth-child(odd){color:var(--muted)}
-</style></head><body><div class="app"><h1>MOT Photo Evidence</h1><div class="sub">DVSA MOT History checks + Google Drive archive.</div>
-<div class="card"><h2>Vehicle</h2><label>Registration</label><input id="reg" placeholder="AB12CDE"><button id="checkReg" class="secondary">Check MOT history</button><div id="regCheckStatus" class="status hidden"></div><div id="motSummary" class="grid"></div></div>
-<div class="card"><h2>Connections</h2><label>Secure backend URL</label><input id="backend"><button id="saveBackend" class="secondary">Save backend URL</button><label>Google OAuth Client ID</label><input id="googleClientId"><button id="saveGoogleClient" class="secondary">Save Google Client ID</button><button id="connectDrive">Connect Google Drive</button><div id="connectionStatus" class="status hidden"></div></div>
-<div class="card"><h2>Evidence</h2><input id="p1" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="1">Take Photo 1 — Vehicle</button><img id="i1" class="thumb hidden"><input id="p2" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="2">Take Photo 2 — VIN</button><img id="i2" class="thumb hidden"><label>Confirmed VIN</label><input id="vin" maxlength="17"><button id="checkVin" class="secondary">Verify VIN ↔ registration</button><div id="vinStatus" class="status hidden"></div><input id="p3" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="3">Take Photo 3 — Mileage</button><img id="i3" class="thumb hidden"><label>Confirmed mileage</label><input id="mileage" inputmode="numeric"><button id="checkMileage" class="secondary">Compare with latest MOT mileage</button><div id="mileageStatus" class="status hidden"></div></div>
-<div class="card"><h2>Location</h2><button id="gps" class="secondary">Get GPS location</button><div id="gpsStatus" class="status hidden"></div></div>
-<div class="card"><h2>Review & Archive</h2><div id="summary" class="grid"></div><button id="uploadDrive">Upload evidence to Google Drive</button><div id="uploadStatus" class="status hidden"></div><button id="clear" class="danger">Clear local photos</button></div></div>
-<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js"></script><script>if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js')</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1220">
+  <title>MOT Evidence</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg">
+  <style>
+    :root{font-family:system-ui,-apple-system,sans-serif;color:#eaf0f7;background:#08111f}*{box-sizing:border-box}body{margin:0;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom);background:linear-gradient(#0b1527,#08111f);min-height:100vh}main{max-width:720px;margin:auto}h1{font-size:1.75rem;margin:.7rem 0}.sub{color:#a9b8ca;margin-top:-.5rem}.card{background:#111e31;border:1px solid #263750;border-radius:16px;padding:16px;margin:14px 0;box-shadow:0 8px 30px #0004}label{display:block;font-weight:650;margin:10px 0 5px}input,button{font:inherit;border-radius:11px}input{width:100%;padding:12px;background:#08111f;color:#fff;border:1px solid #40536d;text-transform:uppercase}button{border:0;padding:12px 15px;background:#2583e8;color:white;font-weight:750;margin:6px 4px 6px 0}button.secondary{background:#314158}button.warn{background:#a65c13}button:disabled{opacity:.45}.photo{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center}.photo img{width:96px;height:76px;object-fit:cover;border-radius:9px;background:#08111f}.status{padding:12px;border-radius:11px;background:#263750;margin:10px 0}.ok{background:#123e2b;border:1px solid #2a9a67}.bad{background:#4d2028;border:1px solid #c55262}.waiting{background:#493b16;border:1px solid #bb9230}.ready{position:sticky;top:8px;z-index:2;font-size:1.1rem;font-weight:800}.checks{margin:8px 0;padding-left:22px}.small{font-size:.9rem;color:#b9c5d2}.hidden{display:none!important}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}progress{width:100%}.gate{position:fixed;inset:0;z-index:20;background:#050b14ee;display:grid;place-items:center;padding:18px}.gate .card{max-width:520px}.gate h2{margin-top:0}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+  <script src="https://accounts.google.com/gsi/client" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+<div id="gpsGate" class="gate"><section class="card">
+  <h2>Location required to begin</h2>
+  <p>Every inspection must start with a fresh GPS location. The inspection stays locked until location access is approved and a position is captured.</p>
+  <button id="beginInspection">Approve location and begin</button>
+  <div id="initialGpsStatus" class="status waiting">Waiting for location approval</div>
+  <p class="small">On iPhone, choose the strongest location permission offered. If access was denied previously, enable Location for this website or app in iPhone Settings, then try again. Apple controls whether an “Always” option is available.</p>
+</section></div>
+<main>
+  <h1>MOT Evidence</h1><p class="sub">DVSA checks and Google Drive evidence archive</p>
+  <section id="ready" class="card status ready waiting">Not ready to upload</section>
+
+  <section class="card"><h2>Connection</h2>
+    <label for="backend">Secure backend URL</label><input id="backend" type="url" inputmode="url" autocapitalize="none">
+    <label for="clientId">Google OAuth Client ID</label><input id="clientId" autocapitalize="none">
+    <button id="saveSettings">Save settings</button><button id="connectDrive" class="secondary">Connect Google Drive</button>
+    <div id="connectionStatus" class="small"></div>
+  </section>
+
+  <section class="card"><h2>Vehicle</h2>
+    <label for="registration">Registration</label><input id="registration" maxlength="10" placeholder="AB12 CDE">
+    <button id="checkMot">Check MOT history</button><div id="motStatus" class="status waiting">MOT history not checked</div>
+  </section>
+
+  <section class="card"><h2>1. Vehicle and plate</h2><div class="photo"><img id="preview1" alt="Photo 1 preview"><div><input id="photo1" type="file" accept="image/*" capture="environment"><div id="ocr1" class="small">Take a clear front/rear vehicle photo showing the plate.</div></div></div>
+    <div id="regCompare" class="status waiting">Awaiting Photo 1</div><button id="confirmReg" class="warn hidden">Confirm likely registration match</button>
+  </section>
+
+  <section class="card"><h2>2. VIN</h2><div class="photo"><img id="preview2" alt="Photo 2 preview"><div><input id="photo2" type="file" accept="image/*" capture="environment"><div id="ocr2" class="small">VIN OCR runs locally on this device.</div></div></div>
+    <label for="vin">Candidate VIN</label><input id="vin" maxlength="17"><div id="vinStatus" class="status waiting">Awaiting valid 17-character VIN</div><button id="confirmVin" class="warn">Confirm VIN</button>
+  </section>
+
+  <section class="card"><h2>3. Mileage</h2><div class="photo"><img id="preview3" alt="Photo 3 preview"><div><input id="photo3" type="file" accept="image/*" capture="environment"><div id="ocr3" class="small">Mileage OCR runs locally on this device.</div></div></div>
+    <label for="mileage">Candidate odometer mileage</label><input id="mileage" inputmode="numeric" maxlength="8"><div id="mileageStatus" class="status waiting">Awaiting mileage</div><button id="confirmMileage" class="warn">Confirm mileage</button>
+  </section>
+
+  <section class="card"><h2>Location</h2><button id="captureGps" class="secondary">Refresh GPS location</button><div id="gpsStatus" class="status waiting">Location must be captured at the start of this inspection</div></section>
+
+  <section class="card"><h2>Upload</h2><div id="duplicateStatus" class="status waiting">Duplicate check runs before upload</div><button id="upload" disabled>Upload evidence to Google Drive</button><button id="newAttempt" class="warn hidden">Create new attempt folder</button><progress id="progress" max="4" value="0"></progress><div id="uploadStatus" class="small"></div></section>
+</main></body></html>
