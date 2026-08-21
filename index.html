@@ -43,19 +43,24 @@
     <button id="checkMot">Check MOT history</button><div id="motStatus" class="status waiting">MOT history not checked</div>
   </section>
 
-  <section class="card"><h2>1. Vehicle and plate</h2><div class="photo"><img id="preview1" alt="Photo 1 preview"><div><input id="photo1" type="file" accept="image/*" capture="environment"><div id="ocr1" class="small">Take a clear front/rear vehicle photo showing the plate.</div></div></div>
-    <div id="regCompare" class="status waiting">Awaiting Photo 1</div><button id="confirmReg" class="warn hidden">Confirm likely registration match</button>
+  <section class="card"><h2>1. Main vehicle image</h2><div class="photo"><img id="preview1" alt="Photo 1 preview"><div><input id="photo1" type="file" accept="image/*" capture="environment"><div id="ocr1" class="small">Capture the complete tested vehicle. OCR is not used on this image.</div></div></div>
   </section>
 
-  <section class="card"><h2>2. VIN</h2><div class="photo"><img id="preview2" alt="Photo 2 preview"><div><input id="photo2" type="file" accept="image/*" capture="environment"><div id="ocr2" class="small">VIN OCR runs locally on this device.</div></div></div>
-    <label for="vin">Candidate VIN</label><input id="vin" maxlength="17"><div id="vinStatus" class="status waiting">Awaiting valid 17-character VIN</div><button id="confirmVin" class="warn">Confirm VIN</button>
+  <section class="card"><h2>2. Registration plate close-up</h2><div class="photo"><img id="preview2" alt="Photo 2 preview"><div><input id="photo2" type="file" accept="image/*" capture="environment"><div id="ocr2" class="small">Fill the frame with the front or rear plate for improved OCR.</div></div></div>
+    <div id="regCompare" class="status waiting">Awaiting close-up plate photo</div><button id="confirmReg" class="warn hidden">Confirm likely registration match</button>
   </section>
 
-  <section class="card"><h2>3. Mileage</h2><div class="photo"><img id="preview3" alt="Photo 3 preview"><div><input id="photo3" type="file" accept="image/*" capture="environment"><div id="ocr3" class="small">Mileage OCR runs locally on this device.</div></div></div>
-    <label for="mileage">Candidate odometer mileage</label><input id="mileage" inputmode="numeric" maxlength="8"><div id="mileageStatus" class="status waiting">Awaiting mileage</div><button id="confirmMileage" class="warn">Confirm mileage</button>
+  <section class="card"><h2>3. VIN</h2><div class="photo"><img id="preview3" alt="Photo 3 preview"><div><input id="photo3" type="file" accept="image/*" capture="environment"><div id="ocr3" class="small">VIN OCR runs locally on this device.</div></div></div>
+    <label for="vin">OCR candidate VIN</label><input id="vin" maxlength="17">
+    <label for="vinLast6">Tester: enter only the last 6 VIN characters</label><input id="vinLast6" maxlength="6" placeholder="LAST 6">
+    <div id="vinStatus" class="status waiting">Awaiting valid 17-character VIN and last-six confirmation</div><button id="confirmVin" class="warn">Confirm last 6 VIN characters</button>
+  </section>
+
+  <section class="card"><h2>4. Mileage</h2><div class="photo"><img id="preview4" alt="Photo 4 preview"><div><input id="photo4" type="file" accept="image/*" capture="environment"><div id="ocr4" class="small">Capture the odometer, then enter the reading manually. OCR is not used.</div></div></div>
+    <label for="mileage">Odometer mileage</label><input id="mileage" inputmode="numeric" maxlength="8"><div id="mileageStatus" class="status waiting">Enter and confirm the mileage shown in Photo 4</div><button id="confirmMileage" class="warn">Confirm mileage</button>
   </section>
 
   <section class="card"><h2>Location</h2><button id="captureGps" class="secondary">Refresh GPS location</button><div id="gpsStatus" class="status waiting">Location must be captured at the start of this inspection</div></section>
 
-  <section class="card"><h2>Upload</h2><div id="duplicateStatus" class="status waiting">Duplicate check runs before upload</div><button id="upload" disabled>Upload evidence to Google Drive</button><button id="newAttempt" class="warn hidden">Create new attempt folder</button><progress id="progress" max="4" value="0"></progress><div id="uploadStatus" class="small"></div></section>
+  <section class="card"><h2>Upload</h2><div id="duplicateStatus" class="status waiting">Duplicate check runs before upload</div><button id="upload" disabled>Upload evidence to Google Drive</button><button id="newAttempt" class="warn hidden">Create new attempt folder</button><progress id="progress" max="5" value="0"></progress><div id="uploadStatus" class="small"></div></section>
 </main></body></html>
