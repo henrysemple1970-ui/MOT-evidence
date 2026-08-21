@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg">
   <style>
-    :root{font-family:system-ui,-apple-system,sans-serif;color:#eaf0f7;background:#08111f}*{box-sizing:border-box}body{margin:0;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom);background:linear-gradient(#0b1527,#08111f);min-height:100vh}main{max-width:720px;margin:auto}h1{font-size:1.75rem;margin:.7rem 0}.sub{color:#a9b8ca;margin-top:-.5rem}.card{background:#111e31;border:1px solid #263750;border-radius:16px;padding:16px;margin:14px 0;box-shadow:0 8px 30px #0004}label{display:block;font-weight:650;margin:10px 0 5px}input,button{font:inherit;border-radius:11px}input{width:100%;padding:12px;background:#08111f;color:#fff;border:1px solid #40536d;text-transform:uppercase}button{border:0;padding:12px 15px;background:#2583e8;color:white;font-weight:750;margin:6px 4px 6px 0}button.secondary{background:#314158}button.warn{background:#a65c13}button:disabled{opacity:.45}.photo{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center}.photo img{width:96px;height:76px;object-fit:cover;border-radius:9px;background:#08111f}.status{padding:12px;border-radius:11px;background:#263750;margin:10px 0}.ok{background:#123e2b;border:1px solid #2a9a67}.bad{background:#4d2028;border:1px solid #c55262}.waiting{background:#493b16;border:1px solid #bb9230}.ready{position:sticky;top:8px;z-index:2;font-size:1.1rem;font-weight:800}.checks{margin:8px 0;padding-left:22px}.small{font-size:.9rem;color:#b9c5d2}.hidden{display:none!important}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}progress{width:100%}.gate{position:fixed;inset:0;z-index:20;background:#050b14ee;display:grid;place-items:center;padding:18px}.gate .card{max-width:520px}.gate h2{margin-top:0}details.settings{border:1px solid #31445e;border-radius:12px;padding:11px;margin-bottom:12px}details.settings summary{cursor:pointer;font-weight:800}details.settings[open] summary{margin-bottom:12px}
+    :root{font-family:system-ui,-apple-system,sans-serif;color:#eaf0f7;background:#08111f}*{box-sizing:border-box}body{margin:0;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom);background:linear-gradient(#0b1527,#08111f);min-height:100vh}main{max-width:720px;margin:auto}h1{font-size:1.75rem;margin:.7rem 0}.sub{color:#a9b8ca;margin-top:-.5rem}.card{background:#111e31;border:1px solid #263750;border-radius:16px;padding:16px;margin:14px 0;box-shadow:0 8px 30px #0004}label{display:block;font-weight:650;margin:10px 0 5px}input,button{font:inherit;border-radius:11px}input{width:100%;padding:12px;background:#08111f;color:#fff;border:1px solid #40536d;text-transform:uppercase}#backend,#clientId,#supportEmail{text-transform:none}button{border:0;padding:12px 15px;background:#2583e8;color:white;font-weight:750;margin:6px 4px 6px 0}button.secondary{background:#314158}button.warn{background:#a65c13}button:disabled{opacity:.45}.photo{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center}.photo img{width:96px;height:76px;object-fit:cover;border-radius:9px;background:#08111f}.status{padding:12px;border-radius:11px;background:#263750;margin:10px 0}.ok{background:#123e2b;border:1px solid #2a9a67}.bad{background:#4d2028;border:1px solid #c55262}.waiting{background:#493b16;border:1px solid #bb9230}.ready{position:sticky;top:8px;z-index:2;font-size:1.1rem;font-weight:800}.checks{margin:8px 0;padding-left:22px}.small{font-size:.9rem;color:#b9c5d2}.hidden{display:none!important}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}progress{width:100%}.gate{position:fixed;inset:0;z-index:20;background:#050b14ee;display:grid;place-items:center;padding:18px}.gate .card{max-width:520px}.gate h2{margin-top:0}.topbar{display:flex;align-items:center;justify-content:space-between}.iconbtn{width:44px;height:44px;padding:0;font-size:1.35rem;background:#263750}.gate-settings{position:absolute;right:18px;top:calc(env(safe-area-inset-top) + 12px)}dialog{width:min(92vw,560px);max-height:88vh;overflow:auto;background:#111e31;color:#eaf0f7;border:1px solid #40536d;border-radius:16px;padding:18px}dialog::backdrop{background:#02060dcc}.dialoghead{display:flex;justify-content:space-between;align-items:center}.dialoghead h2{margin:0}.about{border-top:1px solid #31445e;margin-top:18px;padding-top:12px}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
   <script src="https://accounts.google.com/gsi/client" defer></script>
@@ -16,27 +16,31 @@
 </head>
 <body>
 <div id="gpsGate" class="gate"><section class="card">
+  <button id="openMenuGate" class="iconbtn gate-settings" aria-label="Open settings">⚙</button>
   <h2>Location required to begin</h2>
   <p>Every inspection must start with a fresh GPS location. The inspection stays locked until location access is approved and a position is captured.</p>
   <button id="beginInspection">Approve location, connect Drive and begin</button>
   <div id="initialGpsStatus" class="status waiting">Waiting for location approval</div>
   <p class="small">On iPhone, choose the strongest location permission offered. If access was denied previously, enable Location for this website or app in iPhone Settings, then try again. Apple controls whether an “Always” option is available.</p>
 </section></div>
+<dialog id="appMenu">
+  <div class="dialoghead"><h2>Settings & information</h2><button id="closeMenu" class="iconbtn" aria-label="Close settings">×</button></div>
+  <h3>Connection</h3>
+  <label for="backend">Secure backend URL</label><input id="backend" type="url" inputmode="url" autocapitalize="none" autocomplete="off">
+  <label for="clientId">Google OAuth Client ID</label><input id="clientId" autocapitalize="none" autocomplete="off">
+  <button id="saveSettings">Save settings</button><button id="connectDrive" class="secondary">Connect Google Drive</button>
+  <div id="settingsSummary" class="small">Settings not configured</div><div id="connectionStatus" class="small"></div>
+  <div class="about"><h3>Contact & support</h3>
+    <label for="supportName">Contact name or garage</label><input id="supportName" autocomplete="organization">
+    <label for="supportEmail">Contact email</label><input id="supportEmail" type="email" inputmode="email" autocapitalize="none">
+    <label for="supportPhone">Contact phone</label><input id="supportPhone" type="tel" inputmode="tel">
+    <button id="saveContact" class="secondary">Save contact details</button><div id="contactStatus" class="small"></div>
+  </div>
+  <div class="about"><h3>About</h3><p class="small">MOT Evidence PWA · Four-photo evidence workflow · DVSA and Google Drive integration.</p><p class="small">Connection and contact settings are stored only on this device. DVSA secrets remain in Cloudflare.</p></div>
+</dialog>
 <main>
-  <h1>MOT Evidence</h1><p class="sub">DVSA checks and Google Drive evidence archive</p>
+  <div class="topbar"><div><h1>MOT Evidence</h1><p class="sub">DVSA checks and Google Drive evidence archive</p></div><button id="openMenu" class="iconbtn" aria-label="Open settings">⚙</button></div>
   <section id="ready" class="card status ready waiting">Not ready to upload</section>
-
-  <section class="card"><h2>Connection</h2>
-    <details id="settingsPanel" class="settings">
-      <summary>Settings</summary>
-      <label for="backend">Secure backend URL</label><input id="backend" type="url" inputmode="url" autocapitalize="none" autocomplete="off">
-      <label for="clientId">Google OAuth Client ID</label><input id="clientId" autocapitalize="none" autocomplete="off">
-      <button id="saveSettings">Save and hide settings</button>
-    </details>
-    <div id="settingsSummary" class="small">Settings not configured</div>
-    <button id="connectDrive" class="secondary">Connect Google Drive</button>
-    <div id="connectionStatus" class="small"></div>
-  </section>
 
   <section class="card"><h2>Vehicle</h2>
     <label for="registration">Registration</label><input id="registration" maxlength="10" placeholder="AB12 CDE">
