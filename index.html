@@ -1,48 +1,9 @@
-<!doctype html><html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1220"><meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="MOT Evidence">
-<link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./icon.svg">
-<title>MOT Photo Evidence</title>
-<style>
-:root{--card:#111c2c;--line:#27364d;--txt:#f6f8fb;--muted:#a9b4c5;--blue:#2f7df4;--green:#35c46a;--red:#ff5a67}
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(#07101d,#0b1422);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.app{max-width:760px;margin:auto;padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 28px)}
-h1{font-size:28px;margin:8px 0 4px}h2{font-size:21px;margin:0 0 12px}.sub,.tiny{color:var(--muted);line-height:1.45}.sub{font-size:14px}.tiny{font-size:12px}
-.card{background:#111c2c;border:1px solid var(--line);border-radius:18px;padding:16px;margin:14px 0}
-label{display:block;color:var(--muted);font-size:13px;margin:10px 0 6px}
-input{width:100%;background:#091321;border:1px solid #34455f;color:white;border-radius:12px;padding:14px;font-size:17px}
-button{width:100%;border:0;border-radius:13px;padding:14px 16px;font-size:17px;font-weight:700;background:var(--blue);color:white;margin-top:10px}
-button.secondary{background:#26364d}button.danger{background:#7d2630}.hidden{display:none!important}.thumb{width:100%;border-radius:12px;border:1px solid var(--line);margin-top:10px}
-.status{padding:12px;border-radius:12px;margin:10px 0;font-size:14px}.good{background:rgba(53,196,106,.14);border:1px solid rgba(53,196,106,.4)}.warn{background:rgba(246,183,60,.14);border:1px solid rgba(246,183,60,.4)}.bad{background:rgba(255,90,103,.12);border:1px solid rgba(255,90,103,.4)}
-.step{display:flex;gap:10px;align-items:center;margin:12px 0}.badge{width:32px;height:32px;border-radius:50%;background:#26364d;display:grid;place-items:center;font-weight:800}.badge.done{background:var(--green);color:#06130a}
-.grid{display:grid;grid-template-columns:1fr auto;gap:8px 16px;font-size:14px}.grid div:nth-child(odd){color:var(--muted)}
-</style></head><body><div class="app">
-<h1>MOT Photo Evidence</h1><div class="sub">Capture three evidence photos and archive them automatically to Google Drive.</div>
-
-<div class="card"><h2>Vehicle</h2><label>Registration</label><input id="reg" autocapitalize="characters" placeholder="R6HSS"></div>
-
-<div class="card"><h2>Google Drive</h2>
-<label>Google OAuth Client ID</label><input id="googleClientId" placeholder="xxxxxxxx.apps.googleusercontent.com">
-<button id="saveGoogleClient" class="secondary">Save client ID</button><button id="connectDrive">Connect Google Drive</button>
-<div id="driveStatus" class="status hidden"></div><div class="tiny">Folder structure: MOT Evidence / YYYY-MM-DD / REGISTRATION / 3 images.</div></div>
-
-<div class="card"><h2>Evidence photos</h2>
-<div class="step"><div id="b1" class="badge">1</div><div><b>Vehicle</b><div class="tiny">Full vehicle with registration visible.</div></div></div>
-<input id="p1" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="1">Take Photo 1</button><img id="i1" class="thumb hidden">
-
-<div class="step"><div id="b2" class="badge">2</div><div><b>VIN</b><div class="tiny">Clear VIN photograph.</div></div></div>
-<input id="p2" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="2">Take Photo 2</button><img id="i2" class="thumb hidden">
-<label>VIN</label><input id="vin" maxlength="17" autocapitalize="characters">
-
-<div class="step"><div id="b3" class="badge">3</div><div><b>Mileage</b><div class="tiny">Dashboard/odometer photograph.</div></div></div>
-<input id="p3" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="3">Take Photo 3</button><img id="i3" class="thumb hidden">
-<label>Mileage</label><input id="mileage" inputmode="numeric"></div>
-
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b1220"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="MOT Evidence"><link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./icon.svg"><title>MOT Evidence</title><style>
+:root{--card:#111c2c;--line:#27364d;--txt:#f6f8fb;--muted:#a9b4c5;--blue:#2f7df4;--green:#35c46a;--red:#ff5a67}*{box-sizing:border-box}body{margin:0;background:linear-gradient(#07101d,#0b1422);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{max-width:760px;margin:auto;padding:16px}h1{font-size:28px}.sub,.tiny{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin:14px 0}label{display:block;color:var(--muted);font-size:13px;margin:10px 0 6px}input{width:100%;background:#091321;border:1px solid #34455f;color:white;border-radius:12px;padding:14px;font-size:17px}button{width:100%;border:0;border-radius:13px;padding:14px 16px;font-size:17px;font-weight:700;background:var(--blue);color:white;margin-top:10px}button.secondary{background:#26364d}button.danger{background:#7d2630}.hidden{display:none!important}.thumb{width:100%;border-radius:12px;border:1px solid var(--line);margin-top:10px}.status{padding:12px;border-radius:12px;margin:10px 0;font-size:14px}.good{background:rgba(53,196,106,.14);border:1px solid rgba(53,196,106,.4)}.warn{background:rgba(246,183,60,.14);border:1px solid rgba(246,183,60,.4)}.bad{background:rgba(255,90,103,.12);border:1px solid rgba(255,90,103,.4)}.grid{display:grid;grid-template-columns:1fr auto;gap:8px 16px;font-size:14px}.grid div:nth-child(odd){color:var(--muted)}
+</style></head><body><div class="app"><h1>MOT Photo Evidence</h1><div class="sub">DVSA MOT History checks + Google Drive archive.</div>
+<div class="card"><h2>Vehicle</h2><label>Registration</label><input id="reg" placeholder="AB12CDE"><button id="checkReg" class="secondary">Check MOT history</button><div id="regCheckStatus" class="status hidden"></div><div id="motSummary" class="grid"></div></div>
+<div class="card"><h2>Connections</h2><label>Secure backend URL</label><input id="backend"><button id="saveBackend" class="secondary">Save backend URL</button><label>Google OAuth Client ID</label><input id="googleClientId"><button id="saveGoogleClient" class="secondary">Save Google Client ID</button><button id="connectDrive">Connect Google Drive</button><div id="connectionStatus" class="status hidden"></div></div>
+<div class="card"><h2>Evidence</h2><input id="p1" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="1">Take Photo 1 — Vehicle</button><img id="i1" class="thumb hidden"><input id="p2" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="2">Take Photo 2 — VIN</button><img id="i2" class="thumb hidden"><label>Confirmed VIN</label><input id="vin" maxlength="17"><button id="checkVin" class="secondary">Verify VIN ↔ registration</button><div id="vinStatus" class="status hidden"></div><input id="p3" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="3">Take Photo 3 — Mileage</button><img id="i3" class="thumb hidden"><label>Confirmed mileage</label><input id="mileage" inputmode="numeric"><button id="checkMileage" class="secondary">Compare with latest MOT mileage</button><div id="mileageStatus" class="status hidden"></div></div>
 <div class="card"><h2>Location</h2><button id="gps" class="secondary">Get GPS location</button><div id="gpsStatus" class="status hidden"></div></div>
-
-<div class="card"><h2>Upload</h2><div id="summary" class="grid"></div><button id="uploadDrive">Upload 3 photos to Google Drive</button>
-<div id="uploadStatus" class="status hidden"></div><button id="clear" class="danger">Clear local photos</button></div>
-</div>
-<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js"></script>
-<script>if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js");</script></body></html>
+<div class="card"><h2>Review & Archive</h2><div id="summary" class="grid"></div><button id="uploadDrive">Upload evidence to Google Drive</button><div id="uploadStatus" class="status hidden"></div><button id="clear" class="danger">Clear local photos</button></div></div>
+<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js"></script><script>if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js')</script></body></html>
