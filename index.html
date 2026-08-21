@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg">
   <style>
-    :root{font-family:system-ui,-apple-system,sans-serif;color:#eaf0f7;background:#08111f}*{box-sizing:border-box}body{margin:0;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom);background:linear-gradient(#0b1527,#08111f);min-height:100vh}main{max-width:720px;margin:auto}h1{font-size:1.75rem;margin:.7rem 0}.sub{color:#a9b8ca;margin-top:-.5rem}.card{background:#111e31;border:1px solid #263750;border-radius:16px;padding:16px;margin:14px 0;box-shadow:0 8px 30px #0004}label{display:block;font-weight:650;margin:10px 0 5px}input,button{font:inherit;border-radius:11px}input{width:100%;padding:12px;background:#08111f;color:#fff;border:1px solid #40536d;text-transform:uppercase}button{border:0;padding:12px 15px;background:#2583e8;color:white;font-weight:750;margin:6px 4px 6px 0}button.secondary{background:#314158}button.warn{background:#a65c13}button:disabled{opacity:.45}.photo{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center}.photo img{width:96px;height:76px;object-fit:cover;border-radius:9px;background:#08111f}.status{padding:12px;border-radius:11px;background:#263750;margin:10px 0}.ok{background:#123e2b;border:1px solid #2a9a67}.bad{background:#4d2028;border:1px solid #c55262}.waiting{background:#493b16;border:1px solid #bb9230}.ready{position:sticky;top:8px;z-index:2;font-size:1.1rem;font-weight:800}.checks{margin:8px 0;padding-left:22px}.small{font-size:.9rem;color:#b9c5d2}.hidden{display:none!important}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}progress{width:100%}.gate{position:fixed;inset:0;z-index:20;background:#050b14ee;display:grid;place-items:center;padding:18px}.gate .card{max-width:520px}.gate h2{margin-top:0}
+    :root{font-family:system-ui,-apple-system,sans-serif;color:#eaf0f7;background:#08111f}*{box-sizing:border-box}body{margin:0;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom);background:linear-gradient(#0b1527,#08111f);min-height:100vh}main{max-width:720px;margin:auto}h1{font-size:1.75rem;margin:.7rem 0}.sub{color:#a9b8ca;margin-top:-.5rem}.card{background:#111e31;border:1px solid #263750;border-radius:16px;padding:16px;margin:14px 0;box-shadow:0 8px 30px #0004}label{display:block;font-weight:650;margin:10px 0 5px}input,button{font:inherit;border-radius:11px}input{width:100%;padding:12px;background:#08111f;color:#fff;border:1px solid #40536d;text-transform:uppercase}button{border:0;padding:12px 15px;background:#2583e8;color:white;font-weight:750;margin:6px 4px 6px 0}button.secondary{background:#314158}button.warn{background:#a65c13}button:disabled{opacity:.45}.photo{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center}.photo img{width:96px;height:76px;object-fit:cover;border-radius:9px;background:#08111f}.status{padding:12px;border-radius:11px;background:#263750;margin:10px 0}.ok{background:#123e2b;border:1px solid #2a9a67}.bad{background:#4d2028;border:1px solid #c55262}.waiting{background:#493b16;border:1px solid #bb9230}.ready{position:sticky;top:8px;z-index:2;font-size:1.1rem;font-weight:800}.checks{margin:8px 0;padding-left:22px}.small{font-size:.9rem;color:#b9c5d2}.hidden{display:none!important}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}progress{width:100%}.gate{position:fixed;inset:0;z-index:20;background:#050b14ee;display:grid;place-items:center;padding:18px}.gate .card{max-width:520px}.gate h2{margin-top:0}details.settings{border:1px solid #31445e;border-radius:12px;padding:11px;margin-bottom:12px}details.settings summary{cursor:pointer;font-weight:800}details.settings[open] summary{margin-bottom:12px}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
   <script src="https://accounts.google.com/gsi/client" defer></script>
@@ -27,9 +27,14 @@
   <section id="ready" class="card status ready waiting">Not ready to upload</section>
 
   <section class="card"><h2>Connection</h2>
-    <label for="backend">Secure backend URL</label><input id="backend" type="url" inputmode="url" autocapitalize="none">
-    <label for="clientId">Google OAuth Client ID</label><input id="clientId" autocapitalize="none">
-    <button id="saveSettings">Save settings</button><button id="connectDrive" class="secondary">Connect Google Drive</button>
+    <details id="settingsPanel" class="settings">
+      <summary>Settings</summary>
+      <label for="backend">Secure backend URL</label><input id="backend" type="url" inputmode="url" autocapitalize="none" autocomplete="off">
+      <label for="clientId">Google OAuth Client ID</label><input id="clientId" autocapitalize="none" autocomplete="off">
+      <button id="saveSettings">Save and hide settings</button>
+    </details>
+    <div id="settingsSummary" class="small">Settings not configured</div>
+    <button id="connectDrive" class="secondary">Connect Google Drive</button>
     <div id="connectionStatus" class="small"></div>
   </section>
 
