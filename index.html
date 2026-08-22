@@ -23,72 +23,24 @@ button.secondary{background:#26364d}button.danger{background:#7d2630}button:disa
 .status{padding:12px;border-radius:12px;margin:10px 0;font-size:14px;line-height:1.4}.good{background:rgba(53,196,106,.14);border:1px solid rgba(53,196,106,.4)}.warn{background:rgba(246,183,60,.14);border:1px solid rgba(246,183,60,.4)}.bad{background:rgba(255,90,103,.12);border:1px solid rgba(255,90,103,.4)}
 .grid{display:grid;grid-template-columns:1fr auto;gap:8px 16px;font-size:14px}.grid div:nth-child(odd){color:var(--muted)}
 .confirm{display:flex;gap:10px;align-items:flex-start;background:#0b1625;border:1px solid #31445f;padding:12px;border-radius:12px;margin-top:10px}.confirm input{width:22px;height:22px;margin:0}.confirm label{margin:1px 0 0;color:var(--txt);font-size:15px}
-.ready{font-size:18px;font-weight:800;text-align:center;padding:15px}
-hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+.ready{font-size:18px;font-weight:800;text-align:center;padding:15px}hr{border:0;border-top:1px solid var(--line);margin:18px 0}
 </style>
 </head>
 <body><div class="app">
 <h1>MOT Photo Evidence</h1>
 <div class="sub">Manual tester confirmation, DVSA MOT History checks and Google Drive archive. No OCR.</div>
+<div id="setupStatus" class="status warn hidden">App setup required. Ask the administrator to configure this device.</div>
 
-<div class="card">
-<h2>1. Vehicle</h2>
-<label>Registration</label>
-<input id="reg" type="text" autocapitalize="characters" autocomplete="off" placeholder="AB12CDE">
-<button id="checkReg" class="secondary">Check registration with DVSA</button>
-<div id="regCheckStatus" class="status hidden"></div>
-<div id="motSummary" class="grid"></div>
-<div class="confirm"><input id="confirmReg" type="checkbox"><label for="confirmReg">I confirm the registration entered above matches the vehicle.</label></div>
+<div class="card"><h2>1. Vehicle</h2><label>Registration</label><input id="reg" type="text" autocapitalize="characters" autocomplete="off" placeholder="AB12CDE"><button id="checkReg" class="secondary">Check registration with DVSA</button><div id="regCheckStatus" class="status hidden"></div><div id="motSummary" class="grid"></div><div class="confirm"><input id="confirmReg" type="checkbox"><label for="confirmReg">I confirm the registration entered above matches the vehicle.</label></div></div>
+
+<div class="card"><h2>2. Evidence Photos</h2>
+<input id="p1" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="1">Take Photo 1 — Vehicle</button><img id="i1" class="thumb hidden">
+<hr><input id="p2" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="2">Take Photo 2 — VIN</button><img id="i2" class="thumb hidden"><label>VIN — enter manually</label><input id="vin" type="text" maxlength="17" autocapitalize="characters" autocomplete="off" placeholder="17-character VIN"><div class="confirm"><input id="confirmVin" type="checkbox"><label for="confirmVin">I confirm the VIN entered above matches the VIN shown on the vehicle.</label></div><button id="checkVin" class="secondary">Verify VIN ↔ registration with DVSA</button><div id="vinStatus" class="status hidden"></div>
+<hr><input id="p3" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="3">Take Photo 3 — Mileage</button><img id="i3" class="thumb hidden"><label>Mileage — enter manually</label><input id="mileage" type="number" inputmode="numeric" min="1" step="1" placeholder="e.g. 45273"><div class="confirm"><input id="confirmMileage" type="checkbox"><label for="confirmMileage">I confirm the mileage entered above matches the odometer shown on the vehicle.</label></div><button id="checkMileage" class="secondary">Compare with latest MOT mileage</button><div id="mileageStatus" class="status hidden"></div></div>
+
+<div class="card"><h2>3. Location</h2><button id="gps" class="secondary">Get GPS location</button><div id="gpsStatus" class="status hidden"></div></div>
+<div class="card"><h2>4. Review & Archive</h2><div id="readyStatus" class="status bad ready">NOT READY TO UPLOAD</div><div id="summary" class="grid"></div><div class="confirm"><input id="allowDuplicate" type="checkbox"><label for="allowDuplicate">Create another attempt if this registration has already been archived today.</label></div><button id="uploadDrive">Upload evidence to Google Drive</button><div id="uploadStatus" class="status hidden"></div><button id="clear" class="danger">Clear local photos</button></div>
 </div>
-
-<div class="card">
-<h2>2. Connections</h2>
-<label>Secure backend URL</label><input id="backend" type="text">
-<button id="saveBackend" class="secondary">Save backend URL</button>
-<label>Google OAuth Client ID</label><input id="googleClientId" type="text">
-<button id="saveGoogleClient" class="secondary">Save Google Client ID</button>
-<button id="connectDrive">Connect Google Drive</button>
-<div id="connectionStatus" class="status hidden"></div>
-</div>
-
-<div class="card">
-<h2>3. Evidence Photos</h2>
-<input id="p1" class="hidden" type="file" accept="image/*" capture="environment">
-<button data-p="1">Take Photo 1 — Vehicle</button><img id="i1" class="thumb hidden">
-
-<hr>
-<input id="p2" class="hidden" type="file" accept="image/*" capture="environment">
-<button data-p="2">Take Photo 2 — VIN</button><img id="i2" class="thumb hidden">
-<label>VIN — enter manually</label>
-<input id="vin" type="text" maxlength="17" autocapitalize="characters" autocomplete="off" placeholder="17-character VIN">
-<div class="confirm"><input id="confirmVin" type="checkbox"><label for="confirmVin">I confirm the VIN entered above matches the VIN shown on the vehicle.</label></div>
-<button id="checkVin" class="secondary">Verify VIN ↔ registration with DVSA</button>
-<div id="vinStatus" class="status hidden"></div>
-
-<hr>
-<input id="p3" class="hidden" type="file" accept="image/*" capture="environment">
-<button data-p="3">Take Photo 3 — Mileage</button><img id="i3" class="thumb hidden">
-<label>Mileage — enter manually</label>
-<input id="mileage" type="number" inputmode="numeric" min="1" step="1" placeholder="e.g. 45273">
-<div class="confirm"><input id="confirmMileage" type="checkbox"><label for="confirmMileage">I confirm the mileage entered above matches the odometer shown on the vehicle.</label></div>
-<button id="checkMileage" class="secondary">Compare with latest MOT mileage</button>
-<div id="mileageStatus" class="status hidden"></div>
-</div>
-
-<div class="card"><h2>4. Location</h2><button id="gps" class="secondary">Get GPS location</button><div id="gpsStatus" class="status hidden"></div></div>
-
-<div class="card">
-<h2>5. Review & Archive</h2>
-<div id="readyStatus" class="status bad ready">NOT READY TO UPLOAD</div>
-<div id="summary" class="grid"></div>
-<div class="confirm"><input id="allowDuplicate" type="checkbox"><label for="allowDuplicate">Create another attempt if this registration has already been archived today.</label></div>
-<button id="uploadDrive">Upload evidence to Google Drive</button>
-<div id="uploadStatus" class="status hidden"></div>
-<button id="clear" class="danger">Clear local photos</button>
-</div>
-</div>
-
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="./app.js"></script>
-<script>if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js");</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js"></script><script>if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js");</script>
 </body></html>
+
