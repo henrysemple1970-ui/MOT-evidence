@@ -8,7 +8,9 @@ const cleanReg=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8
 const cleanVIN=v=>String(v||"").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,"").slice(0,17);
 
 function status(id,kind,msg){const e=$(id);if(!e)return;e.className="status "+kind;e.textContent=msg}
-function backend(){return ($("backend").value||"").trim().replace(/\/$/,"")}
+function backend(){return (localStorage.getItem("motBackend")||"").trim().replace(/\/$/,"")}
+function clientId(){return (localStorage.getItem("motGoogleClientId")||"").trim()}
+function hasSetup(){return !!backend()&&!!clientId()}
 function confirmations(){
   return {reg:$("confirmReg").checked,vin:$("confirmVin").checked,mileage:$("confirmMileage").checked};
 }
@@ -25,7 +27,7 @@ function readyReasons(){
   if(!c.mileage) reasons.push("mileage confirmation");
   if(!S.mileageChecked) reasons.push("mileage comparison");
   if(!S.coords) reasons.push("GPS");
-  if(!S.driveToken) reasons.push("Google Drive connection");
+  if(!hasSetup()) reasons.push("app setup");
   return reasons;
 }
 function update(){
@@ -46,14 +48,11 @@ function update(){
     ["Mileage check",S.mileageChecked?(S.mileageWarning?"WARNING recorded":"Checked"):"Not checked"],
     ["GPS",S.coords?`${S.coords.lat.toFixed(6)}, ${S.coords.lon.toFixed(6)}`:"Not captured"],
     ["Photos",`${Object.keys(S.photos).length} / 3`],
-    ["Drive",S.driveToken?"Connected":"Not connected"]
+    ["Drive",S.driveToken?"Connected":"Connects when upload starts"]
   ].map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
+  $("setupStatus").classList.toggle("hidden",hasSetup());
   $("uploadDrive").disabled=reasons.length>0;
 }
-$("backend").value=localStorage.getItem("motBackend")||"";
-$("googleClientId").value=localStorage.getItem("motGoogleClientId")||"";
-$("saveBackend").onclick=()=>{localStorage.setItem("motBackend",backend());status("connectionStatus","good","Backend URL saved.")};
-$("saveGoogleClient").onclick=()=>{localStorage.setItem("motGoogleClientId",$("googleClientId").value.trim());status("connectionStatus","good","Google Client ID saved.")};
 
 ["reg","vin","mileage","confirmReg","confirmVin","confirmMileage","allowDuplicate"].forEach(id=>$(id).addEventListener("input",()=>{
   if(id==="reg"){S.regChecked=false;S.vinVerified=false;S.mileageChecked=false}
@@ -63,7 +62,7 @@ $("saveGoogleClient").onclick=()=>{localStorage.setItem("motGoogleClientId",$("g
 }));
 
 async function api(path){
-  if(!backend())throw new Error("Enter the secure backend URL first.");
+  if(!backend())throw new Error("App setup required. Ask the administrator to configure this device.");
   const r=await fetch(backend()+path);
   const text=await r.text();let b={};try{b=JSON.parse(text)}catch{b={message:text}}
   if(!r.ok)throw new Error(b.error||b.message||`Backend error ${r.status}`);
@@ -173,9 +172,8 @@ async function watermark(file,n){
   return{blob,url:URL.createObjectURL(blob)}
 }
 
-function clientId(){return $("googleClientId").value.trim()}
 async function connectDrive(){
-  if(!clientId())throw new Error("Enter Google OAuth Client ID.");
+  if(!clientId())throw new Error("App setup required. Ask the administrator to configure this device.");
   if(!window.google?.accounts?.oauth2)throw new Error("Google sign-in is still loading.");
   return new Promise((resolve,reject)=>{
     const c=google.accounts.oauth2.initTokenClient({
@@ -183,13 +181,12 @@ async function connectDrive(){
       callback:r=>{
         if(r.error)return reject(new Error(r.error_description||r.error));
         S.driveToken=r.access_token;S.driveTokenExpiry=Date.now()+((r.expires_in||3600)*1000);
-        status("connectionStatus","good","Google Drive connected.");update();resolve(r.access_token);
+        update();resolve(r.access_token);
       }
     });
     c.requestAccessToken({prompt:"consent"});
   });
 }
-$("connectDrive").onclick=async()=>{try{await connectDrive()}catch(e){status("connectionStatus","bad",e.message)}};
 async function ensureToken(){if(S.driveToken&&Date.now()<S.driveTokenExpiry-60000)return S.driveToken;return connectDrive()}
 async function driveFetch(url,opt={}){
   const token=await ensureToken(),h=new Headers(opt.headers||{});h.set("Authorization",`Bearer ${token}`);
@@ -263,3 +260,4 @@ function clearPhotos(){
 }
 $("clear").onclick=()=>{clearPhotos();status("uploadStatus","good","Local photos cleared.");update()};
 update();
+
