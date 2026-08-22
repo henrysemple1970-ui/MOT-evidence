@@ -6,6 +6,7 @@ const S={
 const $=id=>document.getElementById(id);
 const cleanReg=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
 const cleanVIN=v=>String(v||"").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,"").slice(0,17);
+const cleanVINLast6=v=>String(v||"").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,"").slice(0,6);
 
 function status(id,kind,msg){const e=$(id);if(!e)return;e.className="status "+kind;e.textContent=msg}
 function backend(){return (localStorage.getItem("motBackend")||"").trim().replace(/\/$/,"")}
@@ -21,7 +22,9 @@ function readyReasons(){
   if(!c.reg) reasons.push("registration confirmation");
   if(Object.keys(S.photos).length!==3) reasons.push("3 photos");
   if(cleanVIN($("vin").value).length!==17) reasons.push("17-character VIN");
-  if(!c.vin) reasons.push("VIN confirmation");
+  if(cleanVINLast6($("vinLast6").value).length!==6) reasons.push("VIN final 6 characters");
+  if(cleanVIN($("vin").value).slice(-6)!==cleanVINLast6($("vinLast6").value)) reasons.push("VIN final 6 match");
+  if(!c.vin) reasons.push("VIN final 6 confirmation");
   if(!S.vinVerified) reasons.push("DVSA VIN verification");
   if(!(Number($("mileage").value)>0)) reasons.push("mileage");
   if(!c.mileage) reasons.push("mileage confirmation");
@@ -33,6 +36,7 @@ function readyReasons(){
 function update(){
   $("reg").value=cleanReg($("reg").value);
   $("vin").value=cleanVIN($("vin").value);
+  $("vinLast6").value=cleanVINLast6($("vinLast6").value);
   const reasons=readyReasons();
   const rs=$("readyStatus");
   if(reasons.length===0){
@@ -54,9 +58,9 @@ function update(){
   $("uploadDrive").disabled=reasons.length>0;
 }
 
-["reg","vin","mileage","confirmReg","confirmVin","confirmMileage","allowDuplicate"].forEach(id=>$(id).addEventListener("input",()=>{
+["reg","vin","vinLast6","mileage","confirmReg","confirmVin","confirmMileage","allowDuplicate"].forEach(id=>$(id).addEventListener("input",()=>{
   if(id==="reg"){S.regChecked=false;S.vinVerified=false;S.mileageChecked=false}
-  if(id==="vin")S.vinVerified=false;
+  if(id==="vin"||id==="vinLast6")S.vinVerified=false;
   if(id==="mileage")S.mileageChecked=false;
   update();
 }));
@@ -102,8 +106,11 @@ $("checkReg").onclick=async()=>{
 
 $("checkVin").onclick=async()=>{
   const v=cleanVIN($("vin").value),r=cleanReg($("reg").value);
-  if(!$("confirmVin").checked)return status("vinStatus","bad","Confirm the VIN first.");
   if(v.length!==17)return status("vinStatus","bad","VIN must be 17 valid characters (I, O and Q are not used).");
+  const last6=cleanVINLast6($("vinLast6").value);
+  if(last6.length!==6)return status("vinStatus","bad","Enter exactly the final 6 VIN characters, including any zeroes.");
+  if(v.slice(-6)!==last6)return status("vinStatus","bad","The final 6 characters do not match the full VIN entered above.");
+  if(!$("confirmVin").checked)return status("vinStatus","bad","Confirm that the final 6 VIN characters match the vehicle.");
   if(!r)return status("vinStatus","bad","Enter the registration first.");
   try{
     status("vinStatus","warn","Checking VIN with DVSA…");
@@ -111,7 +118,7 @@ $("checkVin").onclick=async()=>{
     const found=cleanReg(vehicle?.registration||vehicle?.registrationNumber||"");
     S.vinVerified=!!found&&found===r;
     status("vinStatus",S.vinVerified?"good":"bad",
-      S.vinVerified?`VIN verified against registration ${r}.`:`VIN verification failed. DVSA returned ${found||"no matching registration"}.`);
+      S.vinVerified?`Final 6 characters confirmed and full VIN verified against registration ${r}.`:`VIN verification failed. DVSA returned ${found||"no matching registration"}.`);
   }catch(e){S.vinVerified=false;status("vinStatus","bad",e.message)}
   update();
 };
@@ -235,8 +242,8 @@ $("uploadDrive").onclick=async()=>{
     const names={1:"01-Vehicle.jpg",2:"02-VIN.jpg",3:"03-Mileage.jpg"};
     for(let n=1;n<=3;n++){status("uploadStatus","warn",`Uploading ${names[n]}…`);await uploadBlob(S.photos[n],names[n],vehicle.id,"image/jpeg")}
     const metadata={
-      registration:reg,vin:cleanVIN($("vin").value),currentMileageMiles:mileage,
-      testerConfirmed:{registration:true,vin:true,mileage:true},
+      registration:reg,vin:cleanVIN($("vin").value),vinLast6Confirmed:cleanVINLast6($("vinLast6").value),currentMileageMiles:mileage,
+      testerConfirmed:{registration:true,vinLast6:true,mileage:true},
       capturedAt:new Date().toISOString(),gps:S.coords,
       dvsa:{make:S.motVehicle?.make||null,model:S.motVehicle?.model||null,primaryColour:S.motVehicle?.primaryColour||null,
         latestMotDate:S.latestTest?.completedDate||null,latestMotResult:S.latestTest?.testResult||null,
