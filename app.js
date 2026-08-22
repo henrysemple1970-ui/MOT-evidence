@@ -1,81 +1,265 @@
-'use strict';
+const S={
+  photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
+  motVehicle:null,latestTest:null,regChecked:false,vinVerified:false,
+  mileageChecked:false,mileageWarning:false
+};
 const $=id=>document.getElementById(id);
-const state={files:[null,null,null,null],regVerified:false,regNeedsConfirmation:false,vinConfirmed:false,mileageConfirmed:false,mot:null,gps:null,token:null,duplicate:false,allowAttempt:false};
-const normReg=s=>(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-const normVin=s=>(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'').replace(/[IOQ]/g,'');
-const escDrive=s=>String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-const setStatus=(id,text,type='waiting')=>{const el=$(id);el.textContent=text;el.className='status '+type};
+const cleanReg=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
+const cleanVIN=v=>String(v||"").toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,"").slice(0,17);
 
-function settings(){return{backend:localStorage.backend||'',clientId:localStorage.googleClientId||''}}
-function maskSetting(value,kind){if(!value)return'Not saved';if(kind==='url'){try{const u=new URL(value);return `${u.protocol}//${u.hostname.slice(0,5)}••••${u.hostname.slice(-8)}`}catch{return'Saved'}}return value.length>18?`${value.slice(0,6)}••••${value.slice(-12)}`:'Saved'}
-function renderSettingsSummary(){const s=settings();$('settingsSummary').textContent=`Backend: ${maskSetting(s.backend,'url')} · Google Client ID: ${maskSetting(s.clientId,'id')}`;$('settingsSummary').className='small '+(s.backend&&s.clientId?'ok':'waiting')}
-function validVin(){return /^[A-HJ-NPR-Z0-9]{17}$/.test($('vin').value)}
-function validMileage(){return /^\d{1,8}$/.test($('mileage').value)&&Number($('mileage').value)>=0}
-function resetAfterFieldChange(kind){if(kind==='reg'){state.regVerified=false;state.mot=null;setStatus('motStatus','MOT history must be checked again')}if(kind==='vin')state.vinConfirmed=false;if(kind==='mileage')state.mileageConfirmed=false;renderReady()}
-function renderReady(){
- const checks=[['Registration verified',state.regVerified],['VIN confirmed',state.vinConfirmed&&validVin()],['Mileage manually confirmed',state.mileageConfirmed&&validMileage()],['MOT history checked',!!state.mot],['Four photos captured',state.files.every(Boolean)],['GPS captured',!!state.gps],['Google Drive connected',!!state.token]];
- const pending=checks.filter(x=>!x[1]).map(x=>x[0]); const ready=!pending.length&&!state.duplicate;
- $('ready').innerHTML=(ready?'Ready to Upload':'Not ready to upload')+'<ul class="checks">'+checks.map(([n,v])=>`<li>${v?'✓':'○'} ${n}</li>`).join('')+'</ul>'+(state.duplicate?'<div>Existing vehicle folder found — choose a new attempt.</div>':'');
- $('ready').className='card status ready '+(ready?'ok':'waiting'); $('upload').disabled=!ready; return ready;
+function status(id,kind,msg){const e=$(id);if(!e)return;e.className="status "+kind;e.textContent=msg}
+function backend(){return ($("backend").value||"").trim().replace(/\/$/,"")}
+function confirmations(){
+  return {reg:$("confirmReg").checked,vin:$("confirmVin").checked,mileage:$("confirmMileage").checked};
 }
-function requestGps(){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Location is not supported on this device.'));navigator.geolocation.getCurrentPosition(p=>{state.gps={latitude:p.coords.latitude,longitude:p.coords.longitude,accuracyMetres:p.coords.accuracy,capturedAt:new Date().toISOString()};setStatus('gpsStatus',`Captured at inspection start · accuracy ±${Math.round(p.coords.accuracy)} m`,'ok');renderReady();resolve(state.gps)},reject,{enableHighAccuracy:true,timeout:20000,maximumAge:0})})}
-async function beginInspection(){setStatus('initialGpsStatus','Requesting location and reconnecting Google Drive…','waiting');$('beginInspection').disabled=true;if(!state.token)autoReconnectDrive(0,true);try{await requestGps();setStatus('initialGpsStatus','Location captured. Inspection unlocked while Drive reconnects.','ok');setTimeout(()=>$('gpsGate').classList.add('hidden'),350)}catch(e){setStatus('initialGpsStatus',`Location is required: ${e.message} Enable access in iPhone Settings, then try again.`,'bad');$('beginInspection').disabled=false}}
-
-async function runOcr(file,kind){
- if(!window.Tesseract)throw new Error('OCR library is not available. Check the internet connection and retry.');
- const id='ocr'+kind; $(id).textContent='Reading photo locally…';
- const result=await Tesseract.recognize(file,'eng',{logger:m=>{if(m.status==='recognizing text')$(id).textContent=`Reading photo locally… ${Math.round((m.progress||0)*100)}%`}});
- $(id).textContent='OCR complete'; return{text:result.data.text||'',confidence:Number(result.data.confidence)||0};
+function readyReasons(){
+  const c=confirmations(), reasons=[];
+  if(!cleanReg($("reg").value)) reasons.push("registration");
+  if(!S.regChecked) reasons.push("DVSA registration check");
+  if(!c.reg) reasons.push("registration confirmation");
+  if(Object.keys(S.photos).length!==3) reasons.push("3 photos");
+  if(cleanVIN($("vin").value).length!==17) reasons.push("17-character VIN");
+  if(!c.vin) reasons.push("VIN confirmation");
+  if(!S.vinVerified) reasons.push("DVSA VIN verification");
+  if(!(Number($("mileage").value)>0)) reasons.push("mileage");
+  if(!c.mileage) reasons.push("mileage confirmation");
+  if(!S.mileageChecked) reasons.push("mileage comparison");
+  if(!S.coords) reasons.push("GPS");
+  if(!S.driveToken) reasons.push("Google Drive connection");
+  return reasons;
 }
-const confusion={O:'0',Q:'0',D:'0',I:'1',L:'1',Z:'2',S:'5',G:'6',B:'8'};
-const shape=s=>[...s].map(c=>confusion[c]||c).join('');
-function registrationCandidates(text){return (text.toUpperCase().match(/[A-Z0-9]{2,9}/g)||[]).map(normReg)}
-function classifyReg(entered,text,confidence){
- const candidates=registrationCandidates(text); if(candidates.includes(entered))return{type:confidence>=60?'exact':'likely',read:entered,confidence};
- let likely=candidates.find(c=>c.length===entered.length&&shape(c)===shape(entered));
- if(!likely)likely=candidates.find(c=>{if(Math.abs(c.length-entered.length)>1)return false;let d=Array.from({length:c.length+1},(_,i)=>i);for(let i=1;i<=entered.length;i++){let n=[i];for(let j=1;j<=c.length;j++)n[j]=Math.min(n[j-1]+1,d[j]+1,d[j-1]+(shape(entered[i-1])===shape(c[j-1])?0:1));d=n}return d[c.length]===1});
- return likely?{type:'likely',read:likely}:{type:'fail',read:candidates.sort((a,b)=>Math.abs(a.length-entered.length)-Math.abs(b.length-entered.length))[0]||'No plate text found'};
+function update(){
+  $("reg").value=cleanReg($("reg").value);
+  $("vin").value=cleanVIN($("vin").value);
+  const reasons=readyReasons();
+  const rs=$("readyStatus");
+  if(reasons.length===0){
+    rs.className="status good ready";rs.textContent=S.mileageWarning?"READY TO UPLOAD — MILEAGE WARNING RECORDED":"READY TO UPLOAD";
+  }else{
+    rs.className="status bad ready";rs.textContent="NOT READY — "+reasons.join(", ");
+  }
+  $("summary").innerHTML=[
+    ["Registration",$("reg").value||"Not set"],
+    ["Tester confirmation",confirmations().reg&&confirmations().vin&&confirmations().mileage?"All confirmed":"Incomplete"],
+    ["Latest MOT",S.latestTest?`${S.latestTest.completedDate||"?"} • ${S.latestTest.testResult||"?"}`:"Not checked"],
+    ["VIN check",S.vinVerified?"Verified":"Not verified"],
+    ["Mileage check",S.mileageChecked?(S.mileageWarning?"WARNING recorded":"Checked"):"Not checked"],
+    ["GPS",S.coords?`${S.coords.lat.toFixed(6)}, ${S.coords.lon.toFixed(6)}`:"Not captured"],
+    ["Photos",`${Object.keys(S.photos).length} / 3`],
+    ["Drive",S.driveToken?"Connected":"Not connected"]
+  ].map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
+  $("uploadDrive").disabled=reasons.length>0;
 }
-function extractVin(text){const runs=(text.toUpperCase().match(/[A-Z0-9\s-]{17,25}/g)||[]).map(normVin).filter(v=>v.length>=17);return runs.map(v=>v.slice(0,17)).find(v=>/^[A-HJ-NPR-Z0-9]{17}$/.test(v))||''}
-function extractMileage(text){const nums=(text.match(/\d[\d ,.]{2,8}/g)||[]).map(x=>x.replace(/\D/g,'')).filter(x=>x.length>=3&&x.length<=8).map(Number).filter(n=>n<=99999999);return nums.length?String(nums.sort((a,b)=>a-b)[0]):''}
+$("backend").value=localStorage.getItem("motBackend")||"";
+$("googleClientId").value=localStorage.getItem("motGoogleClientId")||"";
+$("saveBackend").onclick=()=>{localStorage.setItem("motBackend",backend());status("connectionStatus","good","Backend URL saved.")};
+$("saveGoogleClient").onclick=()=>{localStorage.setItem("motGoogleClientId",$("googleClientId").value.trim());status("connectionStatus","good","Google Client ID saved.")};
 
-async function photoChanged(n){
- const file=$('photo'+n).files[0];state.files[n-1]=file||null;if(!file)return renderReady();$('preview'+n).src=URL.createObjectURL(file);
- if(n===1){$('ocr1').textContent='Main vehicle image captured.';return renderReady()}
- if(n===4){$('ocr4').textContent='Mileage image captured. Enter the displayed reading manually below.';state.mileageConfirmed=false;setStatus('mileageStatus','Enter and confirm the mileage shown in Photo 4','waiting');return renderReady()}
- try{const ocr=await runOcr(file,n);const text=ocr.text;if(n===2){state.regVerified=false;state.regNeedsConfirmation=false;$('confirmReg').classList.add('hidden');const entered=normReg($('registration').value);if(!entered){setStatus('regCompare','Enter the registration, then retake the close-up plate photo','bad')}else{const r=classifyReg(entered,text,ocr.confidence);setStatus('regCompare',`Entered: ${entered} · OCR read: ${r.read} · Confidence: ${Math.round(ocr.confidence)}%`+(r.type==='exact'?' · Exact high-confidence match':r.type==='likely'?' · Likely/low-confidence reading — tester confirmation required':' · No acceptable match — retake the plate photo'),r.type==='exact'?'ok':r.type==='likely'?'waiting':'bad');if(r.type==='exact')state.regVerified=true;if(r.type==='likely'){state.regNeedsConfirmation=true;$('confirmReg').classList.remove('hidden')}}}if(n===3){const v=extractVin(text);if(v)$('vin').value=v;$('vinLast6').value='';state.vinConfirmed=false;setStatus('vinStatus',v?'Candidate VIN found — tester must enter its last 6 characters':'No valid VIN found — enter the full VIN manually, then confirm its last 6','waiting')}}catch(e){$('ocr'+n).textContent=e.message;setStatus(n===2?'regCompare':'vinStatus','OCR could not complete; retake or enter manually','bad')}renderReady();
+["reg","vin","mileage","confirmReg","confirmVin","confirmMileage","allowDuplicate"].forEach(id=>$(id).addEventListener("input",()=>{
+  if(id==="reg"){S.regChecked=false;S.vinVerified=false;S.mileageChecked=false}
+  if(id==="vin")S.vinVerified=false;
+  if(id==="mileage")S.mileageChecked=false;
+  update();
+}));
+
+async function api(path){
+  if(!backend())throw new Error("Enter the secure backend URL first.");
+  const r=await fetch(backend()+path);
+  const text=await r.text();let b={};try{b=JSON.parse(text)}catch{b={message:text}}
+  if(!r.ok)throw new Error(b.error||b.message||`Backend error ${r.status}`);
+  return b;
+}
+function vehicleFromResponse(out){
+  if(Array.isArray(out))return out[0]||null;
+  if(out?.vehicles&&Array.isArray(out.vehicles))return out.vehicles[0]||null;
+  return out||null;
+}
+function latestUsableTest(vehicle){
+  const tests=[...(vehicle?.motTests||[])];
+  tests.sort((a,b)=>String(b.completedDate||"").localeCompare(String(a.completedDate||"")));
+  return tests.find(t=>String(t.odometerValue||"").match(/\d/))||tests[0]||null;
 }
 
-async function api(path,options={}){const base=settings().backend.replace(/\/$/,'');if(!base)throw new Error('Enter the secure backend URL first.');const r=await fetch(base+path,options);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||data.message||`Request failed (${r.status})`);return data}
-function vehicleRecord(data){return Array.isArray(data)?data[0]:data.vehicle||data}
-async function checkMot(){try{const reg=normReg($('registration').value);if(!reg)throw new Error('Enter a registration first.');setStatus('motStatus','Checking DVSA MOT history…');const data=await api('/mot/registration/'+encodeURIComponent(reg));const vehicle=vehicleRecord(data);const tests=vehicle?.motTests||vehicle?.motTest||[];const latest=[...tests].sort((a,b)=>new Date(b.completedDate||b.testDate)-new Date(a.completedDate||a.testDate))[0]||null;state.mot={checkedAt:new Date().toISOString(),registration:reg,latest,raw:vehicle};setStatus('motStatus',latest?`Latest MOT: ${latest.testResult||latest.result||'record found'} · ${latest.completedDate||latest.testDate||'date unavailable'} · ${latest.odometerValue||latest.odometer?.value||'—'} ${latest.odometerUnit||latest.odometer?.unit||''}`:'DVSA check complete — no MOT test record returned','ok');renderReady()}catch(e){state.mot=null;setStatus('motStatus',e.message,'bad');renderReady()}}
+$("checkReg").onclick=async()=>{
+  const r=cleanReg($("reg").value);
+  if(!r)return status("regCheckStatus","bad","Enter a registration.");
+  try{
+    status("regCheckStatus","warn","Checking DVSA MOT history…");
+    const vehicle=vehicleFromResponse(await api(`/mot/registration/${encodeURIComponent(r)}`));
+    if(!vehicle)throw new Error("No vehicle returned by DVSA.");
+    S.motVehicle=vehicle;S.latestTest=latestUsableTest(vehicle);S.regChecked=true;
+    status("regCheckStatus","good",`${vehicle.make||""} ${vehicle.model||""} • registration found in MOT History.`);
+    $("motSummary").innerHTML=[
+      ["Make / model",`${vehicle.make||""} ${vehicle.model||""}`.trim()||"—"],
+      ["Colour",vehicle.primaryColour||"—"],
+      ["Last MOT",S.latestTest?.completedDate||vehicle.lastMotTestDate||"—"],
+      ["Result",S.latestTest?.testResult||"—"],
+      ["Recorded mileage",S.latestTest?.odometerValue?`${S.latestTest.odometerValue} ${S.latestTest.odometerUnit||""}`:"—"]
+    ].map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
+  }catch(e){
+    S.regChecked=false;status("regCheckStatus","bad",e.message);
+  }update();
+};
 
-function driveHeaders(json=true){return{Authorization:'Bearer '+state.token,...(json?{'Content-Type':'application/json'}:{})}}
-async function driveJson(url,options={}){const r=await fetch(url,{...options,headers:{...driveHeaders(options.body!==undefined),...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error?.message||`Google Drive error (${r.status})`);return d}
-async function findFolder(name,parent){const q=["mimeType='application/vnd.google-apps.folder'","trashed=false",`name='${escDrive(name)}'`,parent&&`'${parent}' in parents`].filter(Boolean).join(' and ');const d=await driveJson('https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id,name)&q='+encodeURIComponent(q),{method:'GET',body:undefined});return d.files?.[0]||null}
-async function ensureFolder(name,parent){return(await findFolder(name,parent))||driveJson('https://www.googleapis.com/drive/v3/files?fields=id,name',{method:'POST',body:JSON.stringify({name,mimeType:'application/vnd.google-apps.folder',parents:parent?[parent]:undefined})})}
-async function existingVehicleFolders(dateId,reg){const q=`mimeType='application/vnd.google-apps.folder' and trashed=false and '${dateId}' in parents`;const d=await driveJson('https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id,name)&q='+encodeURIComponent(q),{method:'GET',body:undefined});return(d.files||[]).filter(f=>f.name===reg||f.name.startsWith(reg+' - '))}
-async function uploadFile(name,blob,parent,mime=blob.type||'application/octet-stream'){const boundary='mot_'+crypto.randomUUID();const meta=JSON.stringify({name,parents:[parent]});const body=new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,blob,`\r\n--${boundary}--`]);const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',{method:'POST',headers:{Authorization:'Bearer '+state.token,'Content-Type':'multipart/related; boundary='+boundary},body});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error?.message||'Drive upload failed');return d}
-async function getDateFolder(){const root=await ensureFolder('MOT Evidence');return ensureFolder(today(),root.id)}
-async function upload(){if(!renderReady())return;try{$('upload').disabled=true;$('uploadStatus').textContent='Checking for an existing folder…';$('progress').value=0;const dateFolder=await getDateFolder();const reg=normReg($('registration').value);const duplicates=await existingVehicleFolders(dateFolder.id,reg);if(duplicates.length&&!state.allowAttempt){state.duplicate=true;setStatus('duplicateStatus',`A folder for ${reg} already exists today. Upload stopped.`,'bad');$('newAttempt').classList.remove('hidden');return renderReady()}const base=`${reg} - ${Number($('mileage').value)}mi`;let folderName=base;if(state.allowAttempt){let attempt=2;while(await findFolder(`${base} - Attempt ${attempt}`,dateFolder.id))attempt++;folderName=`${base} - Attempt ${attempt}`}else if(await findFolder(base,dateFolder.id)){state.duplicate=true;setStatus('duplicateStatus',`Folder ${base} already exists. Upload stopped.`,'bad');$('newAttempt').classList.remove('hidden');return renderReady()}const vehicle=await ensureFolder(folderName,dateFolder.id);setStatus('duplicateStatus','No duplicate conflict — uploading','ok');const names=['01-Vehicle.jpg','02-Registration-Plate.jpg','03-VIN.jpg','04-Mileage.jpg'];for(let i=0;i<4;i++){$('uploadStatus').textContent=`Uploading ${i+1} of 5…`;await uploadFile(names[i],state.files[i],vehicle.id);$('progress').value=i+1}const summary={schemaVersion:3,registration:reg,vin:$('vin').value,mileage:Number($('mileage').value),capturedAt:new Date().toISOString(),driveFolder:folderName,attempt:state.allowAttempt,gps:state.gps,registrationVerification:{confirmed:true,method:state.regNeedsConfirmation?'ocr-likely-tester-confirmed':'ocr-exact',photo:'02-Registration-Plate.jpg'},vinConfirmation:{confirmed:true,validFormat:true,testerConfirmedLast6:$('vinLast6').value,photo:'03-VIN.jpg'},mileageConfirmation:{confirmed:true,method:'manual-tester-confirmed',photo:'04-Mileage.jpg'},motHistory:state.mot,uploads:names};await uploadFile('05-Evidence-Summary.json',new Blob([JSON.stringify(summary,null,2)],{type:'application/json'}),vehicle.id,'application/json');$('progress').value=5;$('uploadStatus').textContent=`Upload complete: ${folderName}. Local photos have now been cleared.`;for(let i=1;i<=4;i++){$('photo'+i).value='';$('preview'+i).removeAttribute('src')}state.files=[null,null,null,null];state.allowAttempt=false;state.duplicate=false;renderReady()}catch(e){$('uploadStatus').textContent=`Upload stopped: ${e.message}. Local photos were kept for retry.`;renderReady()}}
+$("checkVin").onclick=async()=>{
+  const v=cleanVIN($("vin").value),r=cleanReg($("reg").value);
+  if(!$("confirmVin").checked)return status("vinStatus","bad","Confirm the VIN first.");
+  if(v.length!==17)return status("vinStatus","bad","VIN must be 17 valid characters (I, O and Q are not used).");
+  if(!r)return status("vinStatus","bad","Enter the registration first.");
+  try{
+    status("vinStatus","warn","Checking VIN with DVSA…");
+    const vehicle=vehicleFromResponse(await api(`/mot/vin/${encodeURIComponent(v)}`));
+    const found=cleanReg(vehicle?.registration||vehicle?.registrationNumber||"");
+    S.vinVerified=!!found&&found===r;
+    status("vinStatus",S.vinVerified?"good":"bad",
+      S.vinVerified?`VIN verified against registration ${r}.`:`VIN verification failed. DVSA returned ${found||"no matching registration"}.`);
+  }catch(e){S.vinVerified=false;status("vinStatus","bad",e.message)}
+  update();
+};
 
-function connectDrive(){const id=settings().clientId;if(!id)return setStatus('connectionStatus','Enter and save the Google OAuth Client ID first.','bad');if(!google?.accounts?.oauth2)return setStatus('connectionStatus','Google sign-in is still loading. Try again.','bad');google.accounts.oauth2.initTokenClient({client_id:id,scope:'https://www.googleapis.com/auth/drive.file',callback:r=>{if(r.error)return setStatus('connectionStatus',r.error,'bad');state.token=r.access_token;setStatus('connectionStatus','Google Drive connected for this session.','ok');renderReady()}}).requestAccessToken({prompt:''})}
-function autoReconnectDrive(attempt=0,userInitiated=false){const id=settings().clientId;if(!id||state.token)return;if(!window.google?.accounts?.oauth2){if(attempt<12)setTimeout(()=>autoReconnectDrive(attempt+1,userInitiated),500);return}setStatus('connectionStatus',userInitiated?'Connecting Google Drive as the inspection begins…':'Preparing Google Drive reconnection…','waiting');try{google.accounts.oauth2.initTokenClient({client_id:id,scope:'https://www.googleapis.com/auth/drive.file',callback:r=>{if(r.error){setStatus('connectionStatus','Google requires approval. Tap Connect Google Drive once.','waiting');return}state.token=r.access_token;setStatus('connectionStatus','Google Drive connected for this inspection session.','ok');renderReady()}}).requestAccessToken({prompt:''})}catch{setStatus('connectionStatus',userInitiated?'Google requires approval. Tap Connect Google Drive once.':'Drive will reconnect when the inspection begins.','waiting')}}
+$("checkMileage").onclick=async()=>{
+  const r=cleanReg($("reg").value),current=Number($("mileage").value);
+  if(!$("confirmMileage").checked)return status("mileageStatus","bad","Confirm the mileage first.");
+  if(!r||!(current>0))return status("mileageStatus","bad","Enter registration and mileage.");
+  try{
+    status("mileageStatus","warn","Comparing with DVSA MOT history…");
+    if(!S.motVehicle)S.motVehicle=vehicleFromResponse(await api(`/mot/registration/${encodeURIComponent(r)}`));
+    S.latestTest=latestUsableTest(S.motVehicle);
+    if(!S.latestTest?.odometerValue){
+      S.mileageChecked=true;S.mileageWarning=false;
+      status("mileageStatus","warn","No usable previous mileage was returned. Manual mileage is recorded.");
+      update();return;
+    }
+    let previous=Number(String(S.latestTest.odometerValue).replace(/\D/g,""));
+    const unit=String(S.latestTest.odometerUnit||"MI").toUpperCase();
+    if(unit==="KM")previous=Math.round(previous*0.621371);
+    const diff=current-previous;
+    S.mileageChecked=true;S.mileageWarning=diff<0;
+    status("mileageStatus",diff<0?"bad":"good",
+      diff<0
+        ?`WARNING: current mileage is ${Math.abs(diff).toLocaleString()} miles LOWER than previous MOT (${previous.toLocaleString()} mi). This warning will be stored with the evidence.`
+        :`Previous MOT: ${previous.toLocaleString()} mi • current reading is ${diff.toLocaleString()} mi higher.`);
+  }catch(e){S.mileageChecked=false;status("mileageStatus","bad",e.message)}
+  update();
+};
 
-addEventListener('DOMContentLoaded',()=>{$('backend').value=settings().backend;$('clientId').value=settings().clientId;$('saveSettings').onclick=()=>{localStorage.backend=$('backend').value.trim().replace(/\/$/,'');localStorage.googleClientId=$('clientId').value.trim();$('connectionStatus').textContent='Settings saved on this device.'};$('connectDrive').onclick=connectDrive;$('checkMot').onclick=checkMot;[1,2,3].forEach(n=>$('photo'+n).onchange=()=>photoChanged(n));$('registration').oninput=()=>resetAfterFieldChange('reg');$('vin').oninput=()=>resetAfterFieldChange('vin');$('mileage').oninput=()=>resetAfterFieldChange('mileage');$('confirmReg').onclick=()=>{if(state.regNeedsConfirmation){state.regVerified=true;$('confirmReg').classList.add('hidden');setStatus('regCompare',`Entered: ${normReg($('registration').value)} · Likely OCR reading confirmed by tester`,'ok');renderReady()}};$('confirmVin').onclick=async()=>{const v=normVin($('vin').value);$('vin').value=v;if(!validVin())return setStatus('vinStatus','VIN must be exactly 17 characters and cannot contain I, O or Q.','bad');try{const d=await api('/mot/vin/'+encodeURIComponent(v));const r=normReg(vehicleRecord(d)?.registration||vehicleRecord(d)?.registrationNumber);if(r&&r!==normReg($('registration').value))throw new Error(`DVSA VIN lookup returned ${r}, not ${normReg($('registration').value)}.`);state.vinConfirmed=true;setStatus('vinStatus','VIN format valid, DVSA match checked, and tester confirmed.','ok')}catch(e){state.vinConfirmed=false;setStatus('vinStatus',e.message,'bad')}renderReady()};$('confirmMileage').onclick=()=>{if(!validMileage())return setStatus('mileageStatus','Enter digits only.','bad');state.mileageConfirmed=true;const latest=state.mot?.latest;const old=Number(String(latest?.odometerValue||latest?.odometer?.value||'').replace(/\D/g,''));setStatus('mileageStatus',old&&Number($('mileage').value)<old?`Confirmed, but lower than latest MOT mileage (${old.toLocaleString()}). Review before upload.`:`Confirmed: ${Number($('mileage').value).toLocaleString()} miles`,old&&Number($('mileage').value)<old?'waiting':'ok');renderReady()};$('captureGps').onclick=()=>navigator.geolocation.getCurrentPosition(p=>{state.gps={latitude:p.coords.latitude,longitude:p.coords.longitude,accuracyMetres:p.coords.accuracy,capturedAt:new Date().toISOString()};setStatus('gpsStatus',`Captured · accuracy ±${Math.round(p.coords.accuracy)} m`,'ok');renderReady()},e=>setStatus('gpsStatus',e.message,'bad'),{enableHighAccuracy:true,timeout:15000});$('newAttempt').onclick=()=>{state.allowAttempt=true;state.duplicate=false;$('newAttempt').classList.add('hidden');setStatus('duplicateStatus','New attempt explicitly selected. A numbered attempt folder will be created.','waiting');renderReady()};$('upload').onclick=upload;if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');renderReady()});
+$("gps").onclick=()=>navigator.geolocation.getCurrentPosition(
+  p=>{S.coords={lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy};status("gpsStatus","good",`GPS captured • ±${Math.round(p.coords.accuracy)} m`);update()},
+  ()=>status("gpsStatus","bad","Location permission not granted."),
+  {enableHighAccuracy:true,timeout:12000,maximumAge:0}
+);
 
-addEventListener('DOMContentLoaded',()=>{
- $('photo4').onchange=()=>photoChanged(4);
- $('vinLast6').oninput=()=>{const v=normVin($('vinLast6').value).slice(0,6);$('vinLast6').value=v;state.vinConfirmed=false;renderReady()};
- $('confirmVin').onclick=async()=>{const v=normVin($('vin').value);$('vin').value=v;const last6=normVin($('vinLast6').value);$('vinLast6').value=last6;if(!validVin())return setStatus('vinStatus','The OCR candidate VIN must be exactly 17 characters and cannot contain I, O or Q.','bad');if(last6.length!==6)return setStatus('vinStatus','Tester must enter exactly the last 6 VIN characters.','bad');if(last6!==v.slice(-6))return setStatus('vinStatus',`Last 6 characters do not match the OCR candidate ending ${v.slice(-6)}.`,'bad');try{const d=await api('/mot/vin/'+encodeURIComponent(v));const r=normReg(vehicleRecord(d)?.registration||vehicleRecord(d)?.registrationNumber);if(r&&r!==normReg($('registration').value))throw new Error(`DVSA VIN lookup returned ${r}, not ${normReg($('registration').value)}.`);state.vinConfirmed=true;setStatus('vinStatus',`VIN verified. Tester confirmed ending ${last6}.`,'ok')}catch(e){state.vinConfirmed=false;setStatus('vinStatus',e.message,'bad')}renderReady()};
- if(settings().clientId)setStatus('connectionStatus','Drive will reconnect when the inspection begins.','waiting');
- renderSettingsSummary();
- $('supportName').value=localStorage.supportName||'';$('supportEmail').value=localStorage.supportEmail||'';$('supportPhone').value=localStorage.supportPhone||'';
- const openMenu=()=>$('appMenu').showModal();$('openMenu').onclick=openMenu;$('openMenuGate').onclick=openMenu;$('closeMenu').onclick=()=>$('appMenu').close();
- $('saveSettings').onclick=()=>{localStorage.backend=$('backend').value.trim().replace(/\/$/,'');localStorage.googleClientId=$('clientId').value.trim();renderSettingsSummary();$('connectionStatus').textContent='Connection settings saved privately on this device.'};
- $('saveContact').onclick=()=>{localStorage.supportName=$('supportName').value.trim();localStorage.supportEmail=$('supportEmail').value.trim();localStorage.supportPhone=$('supportPhone').value.trim();$('contactStatus').textContent='Contact details saved on this device.'};
- $('beginInspection').onclick=beginInspection;
- $('captureGps').onclick=async()=>{try{await requestGps()}catch(e){setStatus('gpsStatus',`Location is required: ${e.message}`,'bad')}};
- new MutationObserver(()=>{if($('uploadStatus').textContent.startsWith('Upload complete:'))setTimeout(()=>{state.gps=null;setStatus('gpsStatus','A fresh location is required for the next inspection','waiting');setStatus('initialGpsStatus','Waiting for location approval for the next inspection','waiting');$('beginInspection').disabled=false;$('gpsGate').classList.remove('hidden');renderReady()},600)}).observe($('uploadStatus'),{childList:true});
-});
+document.querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>$("p"+b.dataset.p).click());
+for(let n=1;n<=3;n++){
+  $("p"+n).onchange=async e=>{
+    const f=e.target.files[0];if(!f)return;
+    if(!cleanReg($("reg").value)){e.target.value="";return alert("Enter the registration first.");}
+    const out=await watermark(f,n);S.photos[n]=out.blob;
+    $("i"+n).src=out.url;$("i"+n).classList.remove("hidden");update();
+  };
+}
+async function fileToImage(file){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)})}
+async function watermark(file,n){
+  const img=await fileToImage(file),sc=Math.min(1,1800/img.width),c=document.createElement("canvas");
+  c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+  const x=c.getContext("2d");x.drawImage(img,0,0,c.width,c.height);
+  const kind=n===1?"VEHICLE":n===2?"VIN":"MILEAGE";
+  const gps=S.coords?`${S.coords.lat.toFixed(6)}, ${S.coords.lon.toFixed(6)}`:"GPS NOT CAPTURED";
+  const lines=["MOT PHOTO EVIDENCE",`REG: ${cleanReg($("reg").value)}`,new Date().toLocaleString(),`GPS: ${gps}`,`PHOTO ${n} — ${kind}`];
+  const fs=Math.max(24,Math.round(c.width/42)),lh=fs*1.25,pad=fs*.65,bh=lines.length*lh+pad*2;
+  x.fillStyle="rgba(0,0,0,.68)";x.fillRect(0,c.height-bh,c.width,bh);x.fillStyle="white";x.font=`600 ${fs}px -apple-system`;
+  lines.forEach((t,i)=>x.fillText(t,pad,c.height-bh+pad+fs+i*lh));
+  const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));
+  return{blob,url:URL.createObjectURL(blob)}
+}
+
+function clientId(){return $("googleClientId").value.trim()}
+async function connectDrive(){
+  if(!clientId())throw new Error("Enter Google OAuth Client ID.");
+  if(!window.google?.accounts?.oauth2)throw new Error("Google sign-in is still loading.");
+  return new Promise((resolve,reject)=>{
+    const c=google.accounts.oauth2.initTokenClient({
+      client_id:clientId(),scope:"https://www.googleapis.com/auth/drive.file",
+      callback:r=>{
+        if(r.error)return reject(new Error(r.error_description||r.error));
+        S.driveToken=r.access_token;S.driveTokenExpiry=Date.now()+((r.expires_in||3600)*1000);
+        status("connectionStatus","good","Google Drive connected.");update();resolve(r.access_token);
+      }
+    });
+    c.requestAccessToken({prompt:"consent"});
+  });
+}
+$("connectDrive").onclick=async()=>{try{await connectDrive()}catch(e){status("connectionStatus","bad",e.message)}};
+async function ensureToken(){if(S.driveToken&&Date.now()<S.driveTokenExpiry-60000)return S.driveToken;return connectDrive()}
+async function driveFetch(url,opt={}){
+  const token=await ensureToken(),h=new Headers(opt.headers||{});h.set("Authorization",`Bearer ${token}`);
+  const r=await fetch(url,{...opt,headers:h}),t=await r.text();let b={};try{b=JSON.parse(t)}catch{b={message:t}}
+  if(!r.ok)throw new Error(b?.error?.message||b.message||`Drive error ${r.status}`);return b;
+}
+function escQ(s){return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'")}
+async function findFolder(name,parentId){
+  const q=`name='${escQ(name)}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
+  return (await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&spaces=drive`)).files?.[0]||null;
+}
+async function findVehicleFolders(reg,parentId){
+  const q=`mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
+  const files=(await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&spaces=drive`)).files||[];
+  return files.filter(f=>f.name===reg||f.name.startsWith(reg+" - "));
+}
+async function createFolder(name,parentId){return driveFetch("https://www.googleapis.com/drive/v3/files?fields=id,name",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",parents:[parentId]})})}
+async function getFolder(name,parentId){return await findFolder(name,parentId)||await createFolder(name,parentId)}
+async function uploadBlob(blob,filename,parentId,mimeType){
+  const metadata={name:filename,parents:[parentId],mimeType},boundary="mot_"+crypto.randomUUID().replace(/-/g,""),enc=new TextEncoder();
+  const start=enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`);
+  const end=enc.encode(`\r\n--${boundary}--`);
+  const payload=new Blob([start,new Uint8Array(await blob.arrayBuffer()),end],{type:`multipart/related; boundary=${boundary}`});
+  return driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name",{method:"POST",headers:{"Content-Type":`multipart/related; boundary=${boundary}`},body:payload});
+}
+function dateFolder(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
+async function nextAttemptName(base,parentId){
+  const existing=await findVehicleFolders(cleanReg($("reg").value),parentId);
+  if(existing.length===0)return base;
+  if(!$("allowDuplicate").checked)throw new Error(`This registration already has evidence archived today (${existing[0].name}). Tick "Create another attempt" only if a second record is required.`);
+  let n=2,name=`${base} - Attempt ${n}`;
+  const names=new Set(existing.map(x=>x.name));
+  while(names.has(name)){n++;name=`${base} - Attempt ${n}`}
+  return name;
+}
+
+$("uploadDrive").onclick=async()=>{
+  update();const reasons=readyReasons();if(reasons.length)return status("uploadStatus","bad","Not ready: "+reasons.join(", "));
+  const reg=cleanReg($("reg").value),mileage=Number($("mileage").value);
+  try{
+    status("uploadStatus","warn","Checking today's archive…");
+    const root=await getFolder("MOT Evidence","root"),day=await getFolder(dateFolder(),root.id);
+    const base=`${reg} - ${mileage}mi`;
+    const folderName=await nextAttemptName(base,day.id);
+    const vehicle=await createFolder(folderName,day.id);
+    const names={1:"01-Vehicle.jpg",2:"02-VIN.jpg",3:"03-Mileage.jpg"};
+    for(let n=1;n<=3;n++){status("uploadStatus","warn",`Uploading ${names[n]}…`);await uploadBlob(S.photos[n],names[n],vehicle.id,"image/jpeg")}
+    const metadata={
+      registration:reg,vin:cleanVIN($("vin").value),currentMileageMiles:mileage,
+      testerConfirmed:{registration:true,vin:true,mileage:true},
+      capturedAt:new Date().toISOString(),gps:S.coords,
+      dvsa:{make:S.motVehicle?.make||null,model:S.motVehicle?.model||null,primaryColour:S.motVehicle?.primaryColour||null,
+        latestMotDate:S.latestTest?.completedDate||null,latestMotResult:S.latestTest?.testResult||null,
+        previousOdometerValue:S.latestTest?.odometerValue||null,previousOdometerUnit:S.latestTest?.odometerUnit||null,
+        registrationChecked:S.regChecked,vinVerified:S.vinVerified,mileageChecked:S.mileageChecked,mileageWarning:S.mileageWarning},
+      archive:{folder:folderName,duplicateAttempt:folderName!==base}
+    };
+    await uploadBlob(new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}),"04-Evidence-Summary.json",vehicle.id,"application/json");
+    clearPhotos();
+    status("uploadStatus","good",`Complete: MOT Evidence / ${dateFolder()} / ${folderName}. Local photos removed.`);
+    update();
+  }catch(e){status("uploadStatus","bad",`Upload stopped: ${e.message} Local photos retained.`)}
+};
+
+function clearPhotos(){
+  for(let n=1;n<=3;n++){
+    if($("i"+n)?.src)URL.revokeObjectURL($("i"+n).src);
+    $("i"+n).removeAttribute("src");$("i"+n).classList.add("hidden");$("p"+n).value="";
+  }
+  S.photos={};
+}
+$("clear").onclick=()=>{clearPhotos();status("uploadStatus","good","Local photos cleared.");update()};
+update();
