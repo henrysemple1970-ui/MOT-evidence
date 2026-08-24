@@ -1,7 +1,7 @@
 {
   "appId": "uk.co.motevidence.app",
   "appName": "MOT Evidence",
-  "webDir": "www",
+  "webDir": "dist",
   "server": {
     "androidScheme": "https"
   }
