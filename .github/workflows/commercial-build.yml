@@ -1,0 +1,36 @@
+name: Commercial V1 Build Check
+
+on:
+  push:
+    branches: [commercial-v1]
+  pull_request:
+    branches: [main]
+
+jobs:
+  web-and-android:
+    if: github.head_ref == 'commercial-v1' || github.ref == 'refs/heads/commercial-v1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Build web bundle
+        run: npm run build
+      - name: Generate Android project
+        run: npx cap add android
+      - name: Configure Android permissions
+        run: npm run native:configure
+      - name: Sync Capacitor
+        run: npx cap sync android
+      - name: Build Android debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+      - name: Upload Android debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mot-evidence-commercial-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
