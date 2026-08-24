@@ -181,13 +181,27 @@ $("checkReg").onclick=async()=>{
   update();
 };
 
-$("gps").onclick=()=>navigator.geolocation.getCurrentPosition(
-  p=>{S.coords={lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy};status("gpsStatus","good",`GPS captured • ±${Math.round(p.coords.accuracy)} m`);update()},
-  ()=>status("gpsStatus","bad","Location permission not granted."),
-  {enableHighAccuracy:true,timeout:12000,maximumAge:0}
-);
+function captureLocation(){
+  if(!navigator.geolocation){
+    S.coords=null;status("gpsStatus","bad","GPS is not available on this device.");update();
+    return;
+  }
+  status("gpsStatus","warn","Getting GPS location automatically…");
+  navigator.geolocation.getCurrentPosition(
+    p=>{S.coords={lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy};status("gpsStatus","good",`GPS captured automatically • ±${Math.round(p.coords.accuracy)} m`);update()},
+    ()=>{S.coords=null;status("gpsStatus","bad","Location permission is required before taking evidence photos.");update()},
+    {enableHighAccuracy:true,timeout:12000,maximumAge:0}
+  );
+}
 
-document.querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>$("p"+b.dataset.p).click());
+document.querySelectorAll("button[data-p]").forEach(b=>b.onclick=()=>{
+  if(!S.coords){
+    captureLocation();
+    alert("GPS location is required for the photo watermark. Allow location access, then tap the photo button again.");
+    return;
+  }
+  $("p"+b.dataset.p).click();
+});
 for(let n=1;n<=5;n++){
   $("p"+n).onchange=async e=>{
     const f=e.target.files[0];if(!f)return;
@@ -364,11 +378,12 @@ function resetForNextTest(){
   ["confirmReg","emissionsOther","brakeOther","allowDuplicate"].forEach(id=>{if($(id)) $(id).checked=false;});
   if($("motSummary")) $("motSummary").innerHTML="";
   if($("regCheckStatus")) $("regCheckStatus").className="status hidden";
-  if($("gpsStatus")) $("gpsStatus").className="status hidden";
   updateEmissionsUI();
   update();
+  captureLocation();
 }
 $("clear").onclick=()=>clearLocalPhotos(true);
 
 updateEmissionsUI();
 update();
+captureLocation();
