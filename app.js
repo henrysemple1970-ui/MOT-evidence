@@ -217,7 +217,7 @@ async function connectDrive(){
         update();resolve(r.access_token);
       }
     });
-    c.requestAccessToken({prompt:"consent"});
+    c.requestAccessToken({prompt:""});
   });
 }
 if($("connectDrive")) $("connectDrive").onclick=async()=>{try{await connectDrive()}catch(e){status("connectionStatus","bad",e.message)}};
