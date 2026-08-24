@@ -192,7 +192,7 @@ for(let n=1;n<=5;n++){
 }
 async function fileToImage(file){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)})}
 async function watermark(file,n){
-  const img=await fileToImage(file),sc=Math.min(1,1800/img.width),c=document.createElement("canvas");
+  const img=await fileToImage(file),sc=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement("canvas");
   c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
   const x=c.getContext("2d");x.drawImage(img,0,0,c.width,c.height);
   const kinds={1:"VEHICLE",2:"VIN",3:"MILEAGE",4:"EMISSIONS TEST",5:"BRAKE TEST"};
@@ -201,7 +201,7 @@ async function watermark(file,n){
   const fs=Math.max(24,Math.round(c.width/42)),lh=fs*1.25,pad=fs*.65,bh=lines.length*lh+pad*2;
   x.fillStyle="rgba(0,0,0,.68)";x.fillRect(0,c.height-bh,c.width,bh);x.fillStyle="white";x.font=`600 ${fs}px -apple-system`;
   lines.forEach((t,i)=>x.fillText(t,pad,c.height-bh+pad+fs+i*lh));
-  const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.9));
+  const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.82));
   return{blob,url:URL.createObjectURL(blob)}
 }
 
