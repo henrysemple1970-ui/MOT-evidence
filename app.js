@@ -146,6 +146,14 @@ function latestUsableTest(vehicle){
   tests.sort((a,b)=>String(b.completedDate||"").localeCompare(String(a.completedDate||"")));
   return tests[0]||null;
 }
+function latestMileage(test){
+  const value=test?.odometerValue;
+  if(value===undefined || value===null || value==="") return "—";
+  const n=Number(String(value).replace(/,/g,""));
+  const shown=Number.isFinite(n)?n.toLocaleString("en-GB"):String(value);
+  const unit=String(test?.odometerUnit||"").trim();
+  return unit?shown+" "+unit:shown;
+}
 
 $("checkReg").onclick=async()=>{
   const r=cleanReg($("reg").value);
@@ -163,6 +171,7 @@ $("checkReg").onclick=async()=>{
       ["Fuel",vehicle.fuelType||"—"],
       ["First used",vehicleDate(vehicle)||"—"],
       ["Last MOT",S.latestTest?.completedDate||vehicle.lastMotTestDate||"—"],
+      ["Last recorded MOT mileage",latestMileage(S.latestTest)],
       ["Result",S.latestTest?.testResult||"—"]
     ].map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
     updateEmissionsUI();
@@ -294,7 +303,10 @@ function evidenceSummary(){
     motLatest:S.latestTest?{
       completedDate:S.latestTest.completedDate||null,
       testResult:S.latestTest.testResult||null,
-      expiryDate:S.latestTest.expiryDate||null
+      expiryDate:S.latestTest.expiryDate||null,
+      odometerValue:S.latestTest.odometerValue??null,
+      odometerUnit:S.latestTest.odometerUnit||null,
+      odometerResultType:S.latestTest.odometerResultType||null
     }:null
   };
 }
@@ -322,8 +334,9 @@ $("uploadDrive").onclick=async()=>{
     status("uploadStatus","warn","Uploading evidence summary…");
     await uploadBlob(summaryBlob,"06-Evidence-Summary.json",vf.id,"application/json");
 
-    status("uploadStatus","good",`Evidence archived to MOT Evidence / ${dateFolder()} / ${vehicleFolderName}`);
-    clearLocalPhotos(false);
+    const archivedPath=`MOT Evidence / ${dateFolder()} / ${vehicleFolderName}`;
+    resetForNextTest();
+    status("uploadStatus","good",`Evidence archived to ${archivedPath}. Ready for next test.`);
   }catch(e){
     status("uploadStatus","bad",`${e.message} Local photos have been retained for retry.`);
   }
@@ -337,6 +350,22 @@ function clearLocalPhotos(showStatus=true){
     $("i"+n).classList.add("hidden");
   }
   if(showStatus) status("uploadStatus","warn","Local photos cleared.");
+  update();
+}
+function resetForNextTest(){
+  clearLocalPhotos(false);
+  S.coords=null;
+  S.motVehicle=null;
+  S.latestTest=null;
+  S.regChecked=false;
+  S.emissions={code:"UNKNOWN",label:"Check registration",reason:"Vehicle has not been checked yet.",photoRequired:true};
+
+  if($("reg")) $("reg").value="";
+  ["confirmReg","emissionsOther","brakeOther","allowDuplicate"].forEach(id=>{if($(id)) $(id).checked=false;});
+  if($("motSummary")) $("motSummary").innerHTML="";
+  if($("regCheckStatus")) $("regCheckStatus").className="status hidden";
+  if($("gpsStatus")) $("gpsStatus").className="status hidden";
+  updateEmissionsUI();
   update();
 }
 $("clear").onclick=()=>clearLocalPhotos(true);
