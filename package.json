@@ -6,10 +6,11 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "native:init": "npm run build && npx cap add ios && npx cap add android",
-    "cap:sync": "npm run build && npx cap sync",
+    "native:init": "npm run build && npx cap add ios && npx cap add android && npm run native:configure && npx cap sync",
+    "cap:sync": "npm run build && npx cap sync && npm run native:configure",
     "ios": "npm run cap:sync && npx cap open ios",
-    "android": "npm run cap:sync && npx cap open android"
+    "android": "npm run cap:sync && npx cap open android",
+    "native:configure": "node scripts/configure-native.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
