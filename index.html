@@ -41,6 +41,7 @@ hr{border:0;border-top:1px solid var(--line);margin:18px 0}
 <div id="motSummary" class="grid"></div>
 <div id="emissionsRuleStatus" class="status hidden"></div>
 <div class="confirm"><input id="confirmReg" type="checkbox"><label for="confirmReg">I confirm the registration entered above matches the vehicle.</label></div>
+<div id="gpsStatus" class="status warn">Getting GPS location automatically…</div>
 </div>
 
 <!-- Stored configuration remains in the DOM but is deliberately hidden from normal tester view. -->
@@ -83,10 +84,8 @@ hr{border:0;border-top:1px solid var(--line);margin:18px 0}
 <div class="confirm"><input id="brakeOther" type="checkbox"><label for="brakeOther">Other — roller brake test photo not applicable / alternative approved brake test used.</label></div>
 </div>
 
-<div class="card"><h2>3. Location</h2><button id="gps" class="secondary">Get GPS location</button><div id="gpsStatus" class="status hidden"></div></div>
-
 <div class="card">
-<h2>4. Review & Archive</h2>
+<h2>3. Review & Archive</h2>
 <div id="readyStatus" class="status bad ready">NOT READY TO UPLOAD</div>
 <div id="summary" class="grid"></div>
 <div class="confirm"><input id="allowDuplicate" type="checkbox"><label for="allowDuplicate">Create another attempt if this registration has already been archived today.</label></div>
