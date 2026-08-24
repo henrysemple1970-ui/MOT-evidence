@@ -1,0 +1,10 @@
+node_modules/
+ios/App/Pods/
+ios/App/DerivedData/
+android/.gradle/
+android/local.properties
+.DS_Store
+*.keystore
+*.jks
+.env
+.env.*
