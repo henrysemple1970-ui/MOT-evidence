@@ -5,6 +5,17 @@ const S={
 };
 const $=id=>document.getElementById(id);
 const cleanReg=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
+const WIZARD_STEPS=["vehicle","photo1","photo2","photo3","photo4","photo5","review"];
+function showScreen(name){
+  document.querySelectorAll(".screen").forEach(e=>e.classList.remove("active"));
+  $("screen-"+name)?.classList.add("active");
+  const i=WIZARD_STEPS.indexOf(name),p=$("progress");
+  if(i>=0){p?.classList.remove("hidden");if($("progressFill"))$("progressFill").style.width=`${((i+1)/WIZARD_STEPS.length)*100}%`;if($("progressText"))$("progressText").textContent=`${i+1} of ${WIZARD_STEPS.length}`;}
+  else p?.classList.add("hidden");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+function startNewTest(){resetForNextTest();showScreen("vehicle");}
+
 
 function status(id,kind,msg){const e=$(id);if(!e)return;e.className="status "+kind;e.textContent=msg}
 function backend(){
@@ -114,6 +125,9 @@ function update(){
     ["Photos captured",`${pcount} / 5`]
   ].map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
   $("uploadDrive").disabled=reasons.length>0;
+  if($("vehicleNext")) $("vehicleNext").disabled=!(S.regChecked && confirmations().reg && S.coords);
+  if($("previousMileage")) $("previousMileage").textContent=latestMileage(S.latestTest);
+  for(let n=1;n<=3;n++) $("next"+n)?.classList.toggle("hidden",!S.photos[n]);
 }
 
 if($("backend")) $("backend").value=localStorage.getItem("motBackend")||"";
@@ -128,6 +142,14 @@ $("reg").addEventListener("input",()=>{
   updateEmissionsUI();update();
 });
 ["confirmReg","emissionsOther","brakeOther","allowDuplicate"].forEach(id=>$(id)?.addEventListener("input",update));
+$("startTest")?.addEventListener("click",startNewTest);
+$("startNextTest")?.addEventListener("click",startNewTest);
+document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showScreen(b.dataset.go)));
+document.querySelectorAll("[data-back]").forEach(b=>b.addEventListener("click",()=>showScreen(b.dataset.back)));
+$("vehicleNext")?.addEventListener("click",()=>{if(S.regChecked&&confirmations().reg&&S.coords)showScreen("photo1")});
+$("next4")?.addEventListener("click",()=>{if(requiredPhoto4()&&!S.photos[4])return alert("Take the emissions evidence photo, or select Other if a valid DVSA circumstance applies.");showScreen("photo5")});
+$("next5")?.addEventListener("click",()=>{if(requiredPhoto5()&&!S.photos[5])return alert("Take the brake test evidence photo, or select Other if an approved alternative applies.");showScreen("review")});
+
 
 async function api(path){
   if(!backend())throw new Error("Secure backend is not configured.");
@@ -188,8 +210,8 @@ function captureLocation(){
   }
   status("gpsStatus","warn","Getting GPS location automatically…");
   navigator.geolocation.getCurrentPosition(
-    p=>{S.coords={lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy};status("gpsStatus","good",`GPS captured automatically • ±${Math.round(p.coords.accuracy)} m`);update()},
-    ()=>{S.coords=null;status("gpsStatus","bad","Location permission is required before taking evidence photos.");update()},
+    p=>{S.coords={lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy};status("gpsStatus","good",`GPS captured automatically • ±${Math.round(p.coords.accuracy)} m`);if($("homeGps")) $("homeGps").textContent="GPS ready";update()},
+    ()=>{S.coords=null;status("gpsStatus","bad","Location permission is required before taking evidence photos.");if($("homeGps")) $("homeGps").textContent="Location permission required";update()},
     {enableHighAccuracy:true,timeout:12000,maximumAge:0}
   );
 }
@@ -210,6 +232,7 @@ for(let n=1;n<=5;n++){
     $("i"+n).src=out.url;$("i"+n).classList.remove("hidden");
     if(n===4 && $("emissionsOther").checked) $("emissionsOther").checked=false;
     if(n===5 && $("brakeOther").checked) $("brakeOther").checked=false;
+    if(n<=3) $("next"+n)?.classList.remove("hidden");
     update();
   };
 }
@@ -350,7 +373,8 @@ $("uploadDrive").onclick=async()=>{
 
     const archivedPath=`MOT Evidence / ${dateFolder()} / ${vehicleFolderName}`;
     resetForNextTest();
-    status("uploadStatus","good",`Evidence archived to ${archivedPath}. Ready for next test.`);
+    if($("completePath")) $("completePath").textContent=archivedPath;
+    showScreen("complete");
   }catch(e){
     status("uploadStatus","bad",`${e.message} Local photos have been retained for retry.`);
   }
@@ -376,6 +400,9 @@ function resetForNextTest(){
 
   if($("reg")) $("reg").value="";
   ["confirmReg","emissionsOther","brakeOther","allowDuplicate"].forEach(id=>{if($(id)) $(id).checked=false;});
+  for(let n=1;n<=3;n++) $("next"+n)?.classList.add("hidden");
+  if($("previousMileage")) $("previousMileage").textContent="—";
+  if($("completePath")) $("completePath").textContent="";
   if($("motSummary")) $("motSummary").innerHTML="";
   if($("regCheckStatus")) $("regCheckStatus").className="status hidden";
   updateEmissionsUI();
@@ -386,4 +413,5 @@ $("clear").onclick=()=>clearLocalPhotos(true);
 
 updateEmissionsUI();
 update();
+showScreen("home");
 captureLocation();
