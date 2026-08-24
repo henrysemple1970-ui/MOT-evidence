@@ -1,0 +1,22 @@
+{
+  "name": "mot-evidence-commercial",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Commercial iOS and Android build of MOT Photo Evidence",
+  "scripts": {
+    "native:init": "npx cap add ios && npx cap add android",
+    "cap:sync": "npx cap sync",
+    "ios": "npx cap open ios",
+    "android": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/camera": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/geolocation": "^8.0.0",
+    "@capacitor/ios": "^8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0"
+  }
+}
