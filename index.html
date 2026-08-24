@@ -5,67 +5,88 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1220">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MOT Evidence">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./icon.svg">
-<title>MOT Evidence</title>
+<title>MOT Photo Evidence</title>
 <style>
-:root{--card:#111c2c;--line:#27364d;--txt:#f6f8fb;--muted:#a9b4c5;--blue:#2f7df4;--green:#35c46a;--amber:#f6b73c;--red:#ff5a67}
+:root{--bg:#07101d;--card:#111c2c;--line:#27364d;--txt:#f6f8fb;--muted:#a9b4c5;--blue:#2f7df4;--green:#35c46a;--amber:#f6b73c;--red:#ff5a67}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(#07101d,#0b1422);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.app{max-width:760px;margin:auto;padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 28px)}
-h1{font-size:28px;margin:8px 0 4px}h2{font-size:21px;margin:0 0 12px}.sub,.tiny{color:var(--muted);line-height:1.45}.sub{font-size:14px}.tiny{font-size:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin:14px 0}
+.app{max-width:760px;margin:auto;min-height:100vh;padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 28px)}
+h1{font-size:28px;margin:8px 0 4px}h2{font-size:21px;margin:0 0 12px}.sub,.tiny{color:var(--muted);line-height:1.4}.sub{font-size:14px}.tiny{font-size:12px}
+.card{background:#111c2c;border:1px solid var(--line);border-radius:18px;padding:16px;margin:14px 0}
 label{display:block;color:var(--muted);font-size:13px;margin:10px 0 6px}
-input[type=text],input:not([type]){width:100%;background:#091321;border:1px solid #34455f;color:white;border-radius:12px;padding:14px;font-size:17px}
+input{width:100%;background:#091321;border:1px solid #34455f;color:#fff;border-radius:12px;padding:14px;font-size:17px}
 button{width:100%;border:0;border-radius:13px;padding:14px 16px;font-size:17px;font-weight:700;background:var(--blue);color:white;margin-top:10px}
 button.secondary{background:#26364d}button.danger{background:#7d2630}button:disabled{opacity:.45}
-.hidden{display:none!important}.thumb{width:100%;border-radius:12px;border:1px solid var(--line);margin-top:10px}
-.status{padding:12px;border-radius:12px;margin:10px 0;font-size:14px;line-height:1.4}.good{background:rgba(53,196,106,.14);border:1px solid rgba(53,196,106,.4)}.warn{background:rgba(246,183,60,.14);border:1px solid rgba(246,183,60,.4)}.bad{background:rgba(255,90,103,.12);border:1px solid rgba(255,90,103,.4)}
+.row{display:flex;gap:10px}.row>*{flex:1}.hidden{display:none!important}.thumb{width:100%;border-radius:12px;border:1px solid var(--line);margin-top:10px}
+.status{padding:12px;border-radius:12px;margin:10px 0;font-size:14px}.good{background:rgba(53,196,106,.14);border:1px solid rgba(53,196,106,.4)}
+.warn{background:rgba(246,183,60,.14);border:1px solid rgba(246,183,60,.4)}.bad{background:rgba(255,90,103,.12);border:1px solid rgba(255,90,103,.4)}
+.step{display:flex;gap:10px;align-items:center;margin:12px 0}.badge{width:32px;height:32px;border-radius:50%;background:#26364d;display:grid;place-items:center;font-weight:800;flex:0 0 auto}.badge.done{background:var(--green);color:#06130a}
 .grid{display:grid;grid-template-columns:1fr auto;gap:8px 16px;font-size:14px}.grid div:nth-child(odd){color:var(--muted)}
-.confirm{display:flex;gap:10px;align-items:flex-start;background:#0b1625;border:1px solid #31445f;padding:12px;border-radius:12px;margin-top:10px}.confirm input{width:22px;height:22px;margin:0}.confirm label{margin:1px 0 0;color:var(--txt);font-size:15px}
-.ready{font-size:18px;font-weight:800;text-align:center;padding:15px}hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style>
 </head>
-<body><div class="app">
+<body>
+<div class="app">
 <h1>MOT Photo Evidence</h1>
-<div class="sub">Registration and MOT History check, three evidence photos, GPS and Google Drive archive.</div>
+<div class="sub">Secure-backend prototype • credentials stay off the iPhone.</div>
 
 <div class="card">
-<h2>1. Vehicle</h2>
+<h2>Connection</h2>
+<label>Secure backend URL</label>
+<input id="backend" placeholder="https://your-worker.workers.dev">
+<button id="saveBackend" class="secondary">Save backend</button>
+<div id="backendStatus" class="status hidden"></div>
+</div>
+
+<div class="card">
+<h2>Vehicle</h2>
 <label>Registration</label>
-<input id="reg" type="text" autocapitalize="characters" autocomplete="off" placeholder="AB12CDE">
-<button id="checkReg" class="secondary">Check registration with DVSA</button>
-<div id="regCheckStatus" class="status hidden"></div><div id="motSummary" class="grid"></div>
-<div class="confirm"><input id="confirmReg" type="checkbox"><label for="confirmReg">I confirm the registration entered above matches the vehicle.</label></div>
-</div>
-
-<div class="card hidden" aria-hidden="true">
-<h2>Connections</h2>
-<label>Secure backend URL</label><input id="backend" type="text"><button id="saveBackend" class="secondary">Save backend URL</button>
-<label>Google OAuth Client ID</label><input id="googleClientId" type="text"><button id="saveGoogleClient" class="secondary">Save Google Client ID</button>
-<button id="connectDrive">Connect Google Drive</button><div id="connectionStatus" class="status hidden"></div>
+<input id="reg" autocapitalize="characters" placeholder="AB12 CDE">
+<input id="plateInput" class="hidden" type="file" accept="image/*" capture="environment">
+<button id="scanPlate">Scan registration with ANPR</button>
+<div id="vehicleStatus" class="status hidden"></div>
+<div id="vehicleDetails" class="grid"></div>
 </div>
 
 <div class="card">
-<h2>2. Evidence Photos</h2>
-<input id="p1" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="1">Take Photo 1 — Vehicle</button><img id="i1" class="thumb hidden" alt="Vehicle evidence preview"><div id="p1Gps" class="status hidden"></div>
-<hr>
-<input id="p2" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="2">Take Photo 2 — VIN image</button><img id="i2" class="thumb hidden" alt="VIN evidence preview"><div id="p2Gps" class="status hidden"></div>
-<div class="tiny">Photograph the VIN clearly. No VIN text entry or verification is required.</div>
-<hr>
-<input id="p3" class="hidden" type="file" accept="image/*" capture="environment"><button data-p="3">Take Photo 3 — Mileage image</button><img id="i3" class="thumb hidden" alt="Mileage evidence preview"><div id="p3Gps" class="status hidden"></div>
-<div class="tiny">Photograph the odometer clearly. No mileage text entry or comparison is required.</div>
+<h2>Evidence photos</h2>
+
+<div class="step"><div id="b1" class="badge">1</div><div><b>Vehicle</b><div class="tiny">Full vehicle with registration visible.</div></div></div>
+<input id="p1" class="hidden" type="file" accept="image/*" capture="environment">
+<button data-p="1">Take Photo 1</button><img id="i1" class="thumb hidden">
+
+<div class="step"><div id="b2" class="badge">2</div><div><b>VIN</b><div class="tiny">Clear 17-character VIN.</div></div></div>
+<input id="p2" class="hidden" type="file" accept="image/*" capture="environment">
+<button data-p="2">Take Photo 2</button><img id="i2" class="thumb hidden">
+<label>Confirmed VIN</label><input id="vin" class="mono" maxlength="17" autocapitalize="characters">
+<button id="verifyVin" class="secondary">Verify VIN ↔ registration</button>
+<div id="vinStatus" class="status hidden"></div>
+
+<div class="step"><div id="b3" class="badge">3</div><div><b>Dashboard / mileage</b><div class="tiny">Clear odometer display.</div></div></div>
+<input id="p3" class="hidden" type="file" accept="image/*" capture="environment">
+<button data-p="3">Take Photo 3</button><img id="i3" class="thumb hidden">
+<label>Confirmed mileage</label><input id="mileage" inputmode="numeric">
+<button id="checkMileage" class="secondary">Compare with MOT history</button>
+<div id="mileageStatus" class="status hidden"></div>
 </div>
 
 <div class="card">
-<h2>3. Review &amp; Archive</h2>
-<div id="readyStatus" class="status bad ready">NOT READY TO UPLOAD</div><div id="summary" class="grid"></div>
-<div class="confirm"><input id="allowDuplicate" type="checkbox"><label for="allowDuplicate">Create another attempt if this registration has already been archived today.</label></div>
-<button id="uploadDrive">Upload evidence to Google Drive</button><div id="uploadStatus" class="status hidden"></div>
-<button id="clear" class="danger">Clear local photos</button>
+<h2>Location</h2>
+<button id="getLocation" class="secondary">Get GPS location</button>
+<div id="gpsStatus" class="status hidden"></div>
+</div>
+
+<div class="card">
+<h2>Review</h2>
+<div id="summary" class="grid"></div>
+<button id="submit">Submit evidence</button>
+<div id="submitStatus" class="status hidden"></div>
+<button id="clear" class="danger">Clear local evidence now</button>
 </div>
 </div>
-<script src="https://accounts.google.com/gsi/client" async defer></script><script src="./app.js?v=8"></script>
-<script>if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js");</script>
+<script src="./app.js"></script>
+<script>if("serviceWorker"in navigator){navigator.serviceWorker.register("./sw.js")}</script>
 </body></html>
-
