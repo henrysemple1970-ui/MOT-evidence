@@ -1,3 +1,5 @@
+const BUILD_VERSION="8.0.0";
+const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
   motVehicle:null,latestTest:null,regChecked:false,
@@ -6,15 +8,48 @@ const S={
 const $=id=>document.getElementById(id);
 const cleanReg=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
 const WIZARD_STEPS=["vehicle","photo1","photo2","photo3","photo4","photo5","review"];
+let currentScreen="home",recoveryReady=false;
 function showScreen(name){
+  currentScreen=name;
   document.querySelectorAll(".screen").forEach(e=>e.classList.remove("active"));
   $("screen-"+name)?.classList.add("active");
   const i=WIZARD_STEPS.indexOf(name),p=$("progress");
   if(i>=0){p?.classList.remove("hidden");if($("progressFill"))$("progressFill").style.width=`${((i+1)/WIZARD_STEPS.length)*100}%`;if($("progressText"))$("progressText").textContent=`${i+1} of ${WIZARD_STEPS.length}`;}
   else p?.classList.add("hidden");
+  $("testHeader")?.classList.toggle("hidden",i<0);
+  updateHeader(name);
+  if(recoveryReady && i>=0) saveRecovery();
   window.scrollTo({top:0,behavior:"smooth"});
 }
-function startNewTest(){resetForNextTest();showScreen("vehicle");}
+function startNewTest(){resetForNextTest();clearRecovery();showScreen("vehicle");}
+
+function openRecoveryDb(){return new Promise((resolve,reject)=>{const q=indexedDB.open(RECOVERY_DB,1);q.onupgradeneeded=()=>q.result.createObjectStore("tests");q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)})}
+async function saveRecovery(){
+  try{
+    const db=await openRecoveryDb(),data={savedAt:new Date().toISOString(),screen:currentScreen,photos:S.photos,coords:S.coords,motVehicle:S.motVehicle,latestTest:S.latestTest,regChecked:S.regChecked,emissions:S.emissions,reg:cleanReg($("reg")?.value),checks:{confirmReg:!!$("confirmReg")?.checked,emissionsOther:!!$("emissionsOther")?.checked,brakeOther:!!$("brakeOther")?.checked,allowDuplicate:!!$("allowDuplicate")?.checked}};
+    await new Promise((resolve,reject)=>{const t=db.transaction("tests","readwrite"),q=t.objectStore("tests").put(data,"active");q.onsuccess=resolve;q.onerror=()=>reject(q.error)});db.close();
+  }catch(e){console.warn("Recovery save unavailable",e)}
+}
+async function clearRecovery(){try{const db=await openRecoveryDb();await new Promise((resolve,reject)=>{const q=db.transaction("tests","readwrite").objectStore("tests").delete("active");q.onsuccess=resolve;q.onerror=()=>reject(q.error)});db.close()}catch(e){console.warn("Recovery clear unavailable",e)}}
+async function restoreRecovery(){
+  try{
+    const db=await openRecoveryDb(),data=await new Promise((resolve,reject)=>{const q=db.transaction("tests").objectStore("tests").get("active");q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});db.close();
+    if(!data?.reg)return false;
+    S.photos=data.photos||{};S.coords=data.coords||null;S.motVehicle=data.motVehicle||null;S.latestTest=data.latestTest||null;S.regChecked=!!data.regChecked;S.emissions=data.emissions||S.emissions;
+    $("reg").value=data.reg;for(const [id,value] of Object.entries(data.checks||{}))if($(id))$(id).checked=!!value;
+    for(let n=1;n<=5;n++)if(S.photos[n]){$("i"+n).src=URL.createObjectURL(S.photos[n]);$("i"+n).classList.remove("hidden");if(n<=3)$("next"+n)?.classList.remove("hidden");const b=document.querySelector(`button[data-p="${n}"]`);if(b)b.textContent=`Retake Photo ${n}`}
+    if(S.regChecked){status("regCheckStatus","good",`${S.motVehicle?.make||""} ${S.motVehicle?.model||""} • recovered DVSA-checked vehicle.`);updateEmissionsUI()}
+    status("uploadStatus","warn",`Recovered interrupted test saved ${new Date(data.savedAt).toLocaleString()}. Photos remain on this device until upload succeeds or you clear them.`);
+    showScreen(WIZARD_STEPS.includes(data.screen)?data.screen:"review");return true;
+  }catch(e){console.warn("Recovery restore unavailable",e);return false}
+}
+function updateHeader(screen=currentScreen){
+  const reg=cleanReg($("reg")?.value),count=Object.keys(S.photos).length,i=WIZARD_STEPS.indexOf(screen);
+  if($("headerReg"))$("headerReg").textContent=reg||"Registration not set";
+  if($("headerVehicle"))$("headerVehicle").textContent=[S.motVehicle?.make,S.motVehicle?.model].filter(Boolean).join(" ")||"Vehicle details pending";
+  if($("headerProgress"))$("headerProgress").textContent=i>=0?`Step ${i+1} of ${WIZARD_STEPS.length}`:"";
+  if($("headerPhotoCount"))$("headerPhotoCount").textContent=`${count} / 5 photos`;
+}
 
 
 function status(id,kind,msg){const e=$(id);if(!e)return;e.className="status "+kind;e.textContent=msg}
@@ -113,6 +148,7 @@ function update(){
     rs.className="status bad ready";rs.textContent="NOT READY — "+reasons.join(", ");
   }
   const pcount=Object.keys(S.photos).length;
+  updateHeader();renderReviewPhotos();
   $("summary").innerHTML=[
     ["Registration",$("reg").value||"Not set"],
     ["Registration check",S.regChecked?"DVSA checked":"Not checked"],
@@ -129,6 +165,12 @@ function update(){
   if($("previousMileage")) $("previousMileage").textContent=latestMileage(S.latestTest);
   for(let n=1;n<=3;n++) $("next"+n)?.classList.toggle("hidden",!S.photos[n]);
 }
+function renderReviewPhotos(){
+  const box=$("reviewPhotos");if(!box)return;
+  const labels=["Vehicle","VIN","Mileage","Emissions","Brake test"];
+  box.innerHTML=labels.map((label,i)=>{const n=i+1,src=$("i"+n)?.src;if(!S.photos[n])return `<button class="reviewPhoto missing" data-retake="${n}">Photo ${n}<br>${label}<br>Not captured — tap to add</button>`;return `<button class="reviewPhoto" data-retake="${n}"><img src="${src}" alt="Photo ${n}: ${label}"><span>Photo ${n} — ${label}<br><b>Tap to retake</b></span></button>`}).join("");
+  box.querySelectorAll("[data-retake]").forEach(b=>b.onclick=()=>showScreen("photo"+b.dataset.retake));
+}
 
 if($("backend")) $("backend").value=localStorage.getItem("motBackend")||"";
 if($("googleClientId")) $("googleClientId").value=localStorage.getItem("motGoogleClientId")||"";
@@ -139,9 +181,9 @@ $("reg").addEventListener("input",()=>{
   S.regChecked=false;S.motVehicle=null;S.latestTest=null;
   S.emissions={code:"UNKNOWN",label:"Check registration",reason:"Vehicle has not been checked yet.",photoRequired:true};
   if($("emissionsRuleStatus")) $("emissionsRuleStatus").className="status hidden";
-  updateEmissionsUI();update();
+  updateEmissionsUI();update();if(recoveryReady)saveRecovery();
 });
-["confirmReg","emissionsOther","brakeOther","allowDuplicate"].forEach(id=>$(id)?.addEventListener("input",update));
+["confirmReg","emissionsOther","brakeOther","allowDuplicate"].forEach(id=>$(id)?.addEventListener("input",()=>{update();if(recoveryReady)saveRecovery()}));
 $("startTest")?.addEventListener("click",startNewTest);
 $("startNextTest")?.addEventListener("click",startNewTest);
 document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>showScreen(b.dataset.go)));
@@ -196,7 +238,7 @@ $("checkReg").onclick=async()=>{
       ["Last recorded MOT mileage",latestMileage(S.latestTest)],
       ["Result",S.latestTest?.testResult||"—"]
     ].map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
-    updateEmissionsUI();
+    updateEmissionsUI();if(recoveryReady)saveRecovery();
   }catch(e){
     S.regChecked=false;status("regCheckStatus","bad",e.message);
   }
@@ -205,13 +247,13 @@ $("checkReg").onclick=async()=>{
 
 function captureLocation(){
   if(!navigator.geolocation){
-    S.coords=null;status("gpsStatus","bad","GPS is not available on this device.");update();
+    S.coords=null;status("gpsStatus","bad","GPS unavailable on this device. Location is required for evidence watermarks.");update();
     return;
   }
-  status("gpsStatus","warn","Getting GPS location automatically…");
+  status("gpsStatus","warn","GPS: requesting a precise location…");
   navigator.geolocation.getCurrentPosition(
-    p=>{S.coords={lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy};status("gpsStatus","good",`GPS captured automatically • ±${Math.round(p.coords.accuracy)} m`);if($("homeGps")) $("homeGps").textContent="GPS ready";update()},
-    ()=>{S.coords=null;status("gpsStatus","bad","Location permission is required before taking evidence photos.");if($("homeGps")) $("homeGps").textContent="Location permission required";update()},
+    p=>{S.coords={lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy};status("gpsStatus","good",`GPS ready • ${S.coords.lat.toFixed(5)}, ${S.coords.lon.toFixed(5)} • accuracy ±${Math.round(p.coords.accuracy)} m`);if($("homeGps")) $("homeGps").textContent="GPS ready";update();if(recoveryReady)saveRecovery()},
+    ()=>{S.coords=null;status("gpsStatus","bad","GPS not captured. Allow Location access, then tap this message to retry.");$("gpsStatus").onclick=captureLocation;if($("homeGps")) $("homeGps").textContent="Location permission required — start the test to retry";update()},
     {enableHighAccuracy:true,timeout:12000,maximumAge:0}
   );
 }
@@ -230,10 +272,11 @@ for(let n=1;n<=5;n++){
     if(!cleanReg($("reg").value)){e.target.value="";return alert("Enter the registration first.");}
     const out=await watermark(f,n);S.photos[n]=out.blob;
     $("i"+n).src=out.url;$("i"+n).classList.remove("hidden");
+    const captureButton=document.querySelector(`button[data-p="${n}"]`);if(captureButton)captureButton.textContent=`Retake Photo ${n}`;
     if(n===4 && $("emissionsOther").checked) $("emissionsOther").checked=false;
     if(n===5 && $("brakeOther").checked) $("brakeOther").checked=false;
     if(n<=3) $("next"+n)?.classList.remove("hidden");
-    update();
+    update();saveRecovery();
   };
 }
 async function fileToImage(file){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)})}
@@ -372,8 +415,12 @@ $("uploadDrive").onclick=async()=>{
     await uploadBlob(summaryBlob,"06-Evidence-Summary.json",vf.id,"application/json");
 
     const archivedPath=`MOT Evidence / ${dateFolder()} / ${vehicleFolderName}`;
-    resetForNextTest();
+    const completedAt=new Date(),evidenceCount=files.length,makeModel=[S.motVehicle?.make,S.motVehicle?.model].filter(Boolean).join(" ")||"—";
+    if($("completeDetails")) $("completeDetails").innerHTML=[
+      ["Registration",reg],["Vehicle",makeModel],["Evidence photos",String(evidenceCount)],["Drive folder",vehicleFolderName],["Completed",completedAt.toLocaleString()]
+    ].map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
     if($("completePath")) $("completePath").textContent=archivedPath;
+    await clearRecovery();resetForNextTest();
     showScreen("complete");
   }catch(e){
     status("uploadStatus","bad",`${e.message} Local photos have been retained for retry.`);
@@ -386,9 +433,10 @@ function clearLocalPhotos(showStatus=true){
     $("p"+n).value="";
     $("i"+n).removeAttribute("src");
     $("i"+n).classList.add("hidden");
+    const captureButton=document.querySelector(`button[data-p="${n}"]`);if(captureButton){const labels=["","Vehicle","VIN","Mileage","Emissions Evidence","Brake Test"];captureButton.textContent=`Take ${labels[n]} Photo`}
   }
   if(showStatus) status("uploadStatus","warn","Local photos cleared.");
-  update();
+  update();if(showStatus)clearRecovery();
 }
 function resetForNextTest(){
   clearLocalPhotos(false);
@@ -402,7 +450,6 @@ function resetForNextTest(){
   ["confirmReg","emissionsOther","brakeOther","allowDuplicate"].forEach(id=>{if($(id)) $(id).checked=false;});
   for(let n=1;n<=3;n++) $("next"+n)?.classList.add("hidden");
   if($("previousMileage")) $("previousMileage").textContent="—";
-  if($("completePath")) $("completePath").textContent="";
   if($("motSummary")) $("motSummary").innerHTML="";
   if($("regCheckStatus")) $("regCheckStatus").className="status hidden";
   updateEmissionsUI();
@@ -411,7 +458,12 @@ function resetForNextTest(){
 }
 $("clear").onclick=()=>clearLocalPhotos(true);
 
-updateEmissionsUI();
-update();
-showScreen("home");
-captureLocation();
+if($("buildVersion"))$("buildVersion").textContent=`Build v${BUILD_VERSION}`;
+(async()=>{
+  updateEmissionsUI();update();
+  const restored=await restoreRecovery();
+  recoveryReady=true;
+  if(!restored)showScreen("home");
+  captureLocation();
+})();
+
