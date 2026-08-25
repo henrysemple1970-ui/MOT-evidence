@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.0.0";
+const BUILD_VERSION="8.1.0";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
@@ -8,7 +8,7 @@ const S={
 const $=id=>document.getElementById(id);
 const cleanReg=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8);
 const WIZARD_STEPS=["vehicle","photo1","photo2","photo3","photo4","photo5","review"];
-let currentScreen="home",recoveryReady=false;
+let currentScreen="home",recoveryReady=false,returnToReviewAfterCapture=false;
 function showScreen(name){
   currentScreen=name;
   document.querySelectorAll(".screen").forEach(e=>e.classList.remove("active"));
@@ -50,6 +50,7 @@ function updateHeader(screen=currentScreen){
   if($("headerProgress"))$("headerProgress").textContent=i>=0?`Step ${i+1} of ${WIZARD_STEPS.length}`:"";
   if($("headerPhotoCount"))$("headerPhotoCount").textContent=`${count} / 5 photos`;
 }
+function captureDestination(photoNumber,fromReview){return fromReview?"review":(photoNumber<5?`photo${photoNumber+1}`:"review")}
 
 
 function status(id,kind,msg){const e=$(id);if(!e)return;e.className="status "+kind;e.textContent=msg}
@@ -169,7 +170,7 @@ function renderReviewPhotos(){
   const box=$("reviewPhotos");if(!box)return;
   const labels=["Vehicle","VIN","Mileage","Emissions","Brake test"];
   box.innerHTML=labels.map((label,i)=>{const n=i+1,src=$("i"+n)?.src;if(!S.photos[n])return `<button class="reviewPhoto missing" data-retake="${n}">Photo ${n}<br>${label}<br>Not captured — tap to add</button>`;return `<button class="reviewPhoto" data-retake="${n}"><img src="${src}" alt="Photo ${n}: ${label}"><span>Photo ${n} — ${label}<br><b>Tap to retake</b></span></button>`}).join("");
-  box.querySelectorAll("[data-retake]").forEach(b=>b.onclick=()=>showScreen("photo"+b.dataset.retake));
+  box.querySelectorAll("[data-retake]").forEach(b=>b.onclick=()=>{returnToReviewAfterCapture=true;showScreen("photo"+b.dataset.retake)});
 }
 
 if($("backend")) $("backend").value=localStorage.getItem("motBackend")||"";
@@ -276,7 +277,9 @@ for(let n=1;n<=5;n++){
     if(n===4 && $("emissionsOther").checked) $("emissionsOther").checked=false;
     if(n===5 && $("brakeOther").checked) $("brakeOther").checked=false;
     if(n<=3) $("next"+n)?.classList.remove("hidden");
-    update();saveRecovery();
+    update();await saveRecovery();
+    const destination=captureDestination(n,returnToReviewAfterCapture);
+    returnToReviewAfterCapture=false;showScreen(destination);
   };
 }
 async function fileToImage(file){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)})}
