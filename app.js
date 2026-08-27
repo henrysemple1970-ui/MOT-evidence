@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.1.4";
+const BUILD_VERSION="8.1.5";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
@@ -331,8 +331,22 @@ async function findVehicleFolders(reg,parentId){
   const files=(await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&spaces=drive`)).files||[];
   return files.filter(f=>f.name===reg||f.name.startsWith(reg+" - Attempt "));
 }
-async function createFolder(name,parentId){return driveFetch("https://www.googleapis.com/drive/v3/files?fields=id,name",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",parents:[parentId]})})}
+async function createFolder(name,parentId){
+  const metadata={name,mimeType:"application/vnd.google-apps.folder"};
+  if(parentId)metadata.parents=[parentId];
+  return driveFetch("https://www.googleapis.com/drive/v3/files?fields=id,name",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(metadata)});
+}
 async function getFolder(name,parentId){return await findFolder(name,parentId)||await createFolder(name,parentId)}
+async function getEvidenceRoot(){
+  const savedId=localStorage.getItem("motEvidenceRootFolderId");
+  if(savedId){
+    try{await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(savedId)}?fields=id`);return{id:savedId,name:"MOT Evidence"}}
+    catch{localStorage.removeItem("motEvidenceRootFolderId")}
+  }
+  const folder=await createFolder("MOT Evidence");
+  localStorage.setItem("motEvidenceRootFolderId",folder.id);
+  return folder;
+}
 async function uploadBlob(blob,filename,parentId,mimeType){
   const metadata={name:filename,parents:[parentId],mimeType},boundary="mot_"+crypto.randomUUID().replace(/-/g,""),enc=new TextEncoder();
   const start=enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`);
@@ -401,7 +415,7 @@ $("uploadDrive").onclick=async()=>{
   try{
     status("uploadStatus","warn","Connecting to Google Drive…");
     await ensureToken();
-    const root=await getFolder("MOT Evidence","root");
+    const root=await getEvidenceRoot();
     const day=await getFolder(dateFolder(),root.id);
     const reg=cleanReg($("reg").value),vehicleFolderName=await nextAttemptName(reg,day.id);
     const vf=await createFolder(vehicleFolderName,day.id);
