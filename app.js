@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.1.0";
+const BUILD_VERSION="8.1.1";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
@@ -54,9 +54,10 @@ function captureDestination(photoNumber,fromReview){return fromReview?"review":(
 
 
 function status(id,kind,msg){const e=$(id);if(!e)return;e.className="status "+kind;e.textContent=msg}
+const DEFAULT_BACKEND="https://mot-evidence-backend.henrysemple1970.workers.dev";
 function backend(){
   const el=$("backend");
-  return String(el?.value || localStorage.getItem("motBackend") || "").trim().replace(/\/$/,"");
+  return String(el?.value || localStorage.getItem("motBackend") || DEFAULT_BACKEND).trim().replace(/\/$/,"");
 }
 function clientId(){
   const el=$("googleClientId");
