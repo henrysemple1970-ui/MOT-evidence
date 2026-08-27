@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.1.3";
+const BUILD_VERSION="8.1.4";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
@@ -59,9 +59,10 @@ function backend(){
   const el=$("backend");
   return String(el?.value || localStorage.getItem("motBackend") || DEFAULT_BACKEND).trim().replace(/\/$/,"");
 }
+const DEFAULT_GOOGLE_CLIENT_ID="266716734319-rjid1rtk8kkg80d8kv8ci4bs96qf6age.apps.googleusercontent.com";
 function clientId(){
   const el=$("googleClientId");
-  return String(el?.value || localStorage.getItem("motGoogleClientId") || "").trim();
+  return String(el?.value || localStorage.getItem("motGoogleClientId") || DEFAULT_GOOGLE_CLIENT_ID).trim();
 }
 function confirmations(){return {reg:!!$("confirmReg")?.checked};}
 
@@ -398,24 +399,34 @@ function evidenceSummary(){
 $("uploadDrive").onclick=async()=>{
   update();const reasons=readyReasons();if(reasons.length)return status("uploadStatus","bad","Complete: "+reasons.join(", "));
   try{
-    status("uploadStatus","warn","Uploading evidence securely…");
-    const form=new FormData();
-    const fileNames={1:"01-Vehicle.jpg",2:"02-VIN.jpg",3:"03-Mileage.jpg",4:"04-Emissions.jpg",5:"05-Brake-Test.jpg"};
-    const files=Object.entries(fileNames).filter(([n])=>!!S.photos[Number(n)]);
-    for(const [n,name] of files)form.append("files",S.photos[Number(n)],name);
-    form.append("summary",JSON.stringify(evidenceSummary()));
-    const response=await fetch("https://mot-evidence-anpr.pink-wave-0050.chatgpt.site/api/legacy-evidence",{method:"POST",body:form});
-    const text=await response.text();let result={};try{result=JSON.parse(text)}catch{result={error:text}}
-    if(!response.ok||!result.confirmed)throw new Error(result.error||`Upload failed (${response.status})`);
+    status("uploadStatus","warn","Connecting to Google Drive…");
+    await ensureToken();
+    const root=await getFolder("MOT Evidence","root");
+    const day=await getFolder(dateFolder(),root.id);
+    const reg=cleanReg($("reg").value),vehicleFolderName=await nextAttemptName(reg,day.id);
+    const vf=await createFolder(vehicleFolderName,day.id);
 
-    const reg=cleanReg($("reg").value),completedAt=new Date(),evidenceCount=files.length;
-    const makeModel=[S.motVehicle?.make,S.motVehicle?.model].filter(Boolean).join(" ")||"—";
-    if($("completeDetails"))$("completeDetails").innerHTML=[
-      ["Registration",reg],["Vehicle",makeModel],["Evidence photos",String(evidenceCount)],
-      ["Drive folder",result.folderName||"MOT Evidence"],["Completed",completedAt.toLocaleString()]
+    const files=[
+      [1,"01-Vehicle.jpg"],[2,"02-VIN.jpg"],[3,"03-Mileage.jpg"],
+      [4,"04-Emissions.jpg"],[5,"05-Brake-Test.jpg"]
+    ].filter(([n])=>!!S.photos[n]);
+
+    for(const [n,name] of files){
+      status("uploadStatus","warn",`Uploading ${name}…`);
+      await uploadBlob(S.photos[n],name,vf.id,"image/jpeg");
+    }
+    const summaryBlob=new Blob([JSON.stringify(evidenceSummary(),null,2)],{type:"application/json"});
+    status("uploadStatus","warn","Uploading evidence summary…");
+    await uploadBlob(summaryBlob,"06-Evidence-Summary.json",vf.id,"application/json");
+
+    const archivedPath=`MOT Evidence / ${dateFolder()} / ${vehicleFolderName}`;
+    const completedAt=new Date(),evidenceCount=files.length,makeModel=[S.motVehicle?.make,S.motVehicle?.model].filter(Boolean).join(" ")||"—";
+    if($("completeDetails")) $("completeDetails").innerHTML=[
+      ["Registration",reg],["Vehicle",makeModel],["Evidence photos",String(evidenceCount)],["Drive folder",vehicleFolderName],["Completed",completedAt.toLocaleString()]
     ].map(([a,b])=>`<div>${a}</div><div><b>${b}</b></div>`).join("");
-    if($("completePath"))$("completePath").textContent=result.folderName||`MOT Evidence / ${reg}`;
-    await clearRecovery();resetForNextTest();showScreen("complete");
+    if($("completePath")) $("completePath").textContent=archivedPath;
+    await clearRecovery();resetForNextTest();
+    showScreen("complete");
   }catch(e){
     status("uploadStatus","bad",`${e.message} Local photos have been retained for retry.`);
   }
