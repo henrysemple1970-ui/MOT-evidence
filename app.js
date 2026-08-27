@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.1.2";
+const BUILD_VERSION="8.1.3";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
@@ -404,7 +404,7 @@ $("uploadDrive").onclick=async()=>{
     const files=Object.entries(fileNames).filter(([n])=>!!S.photos[Number(n)]);
     for(const [n,name] of files)form.append("files",S.photos[Number(n)],name);
     form.append("summary",JSON.stringify(evidenceSummary()));
-    const response=await fetch(backend()+"/submit",{method:"POST",body:form});
+    const response=await fetch("https://mot-evidence-anpr.pink-wave-0050.chatgpt.site/api/legacy-evidence",{method:"POST",body:form});
     const text=await response.text();let result={};try{result=JSON.parse(text)}catch{result={error:text}}
     if(!response.ok||!result.confirmed)throw new Error(result.error||`Upload failed (${response.status})`);
 
