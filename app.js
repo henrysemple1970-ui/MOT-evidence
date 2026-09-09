@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.1.6";
+const BUILD_VERSION="8.1.7";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
@@ -360,11 +360,19 @@ async function createArchiveFolder(reg){
   return{folder,vehicleFolderName};
 }
 async function uploadBlob(blob,filename,parentId,mimeType){
-  const metadata={name:filename,parents:[parentId],mimeType},boundary="mot_"+crypto.randomUUID().replace(/-/g,""),enc=new TextEncoder();
-  const start=enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`);
-  const end=enc.encode(`\r\n--${boundary}--`);
-  const payload=new Blob([start,new Uint8Array(await blob.arrayBuffer()),end],{type:`multipart/related; boundary=${boundary}`});
-  return driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name",{method:"POST",headers:{"Content-Type":`multipart/related; boundary=${boundary}`},body:payload});
+  const file=await driveFetch("https://www.googleapis.com/drive/v3/files?fields=id,name",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name:filename,parents:[parentId],mimeType})
+  });
+  try{
+    await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(file.id)}?uploadType=media`,{
+      method:"PATCH",headers:{"Content-Type":mimeType},body:blob
+    });
+    return file;
+  }catch(e){
+    try{await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`,{method:"DELETE"})}catch{}
+    throw e;
+  }
 }
 function dateFolder(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
 async function nextAttemptName(reg,parentId){
@@ -424,11 +432,13 @@ function evidenceSummary(){
 
 $("uploadDrive").onclick=async()=>{
   update();const reasons=readyReasons();if(reasons.length)return status("uploadStatus","bad","Complete: "+reasons.join(", "));
+  let uploadStage="connecting to Google Drive";
   try{
     status("uploadStatus","warn","Connecting to Google Drive…");
     await ensureToken();
     const reg=cleanReg($("reg").value);
     let archive;
+    uploadStage="preparing the Drive archive folder";
     try{archive=await createArchiveFolder(reg)}catch(e){
       if(!isMissingDriveObject(e))throw e;
       localStorage.removeItem("motEvidenceRootFolderId");
@@ -443,10 +453,12 @@ $("uploadDrive").onclick=async()=>{
     ].filter(([n])=>!!S.photos[n]);
 
     for(const [n,name] of files){
+      uploadStage=`uploading ${name}`;
       status("uploadStatus","warn",`Uploading ${name}…`);
       await uploadBlob(S.photos[n],name,vf.id,"image/jpeg");
     }
     const summaryBlob=new Blob([JSON.stringify(evidenceSummary(),null,2)],{type:"application/json"});
+    uploadStage="uploading the evidence summary";
     status("uploadStatus","warn","Uploading evidence summary…");
     await uploadBlob(summaryBlob,"06-Evidence-Summary.json",vf.id,"application/json");
 
@@ -459,7 +471,8 @@ $("uploadDrive").onclick=async()=>{
     await clearRecovery();resetForNextTest();
     showScreen("complete");
   }catch(e){
-    status("uploadStatus","bad",`${e.message} Local photos have been retained for retry.`);
+    const detail=e?.name&&e.name!=="Error"?`${e.name}: ${e.message}`:e.message;
+    status("uploadStatus","bad",`Upload failed while ${uploadStage}: ${detail}. Local photos have been retained for retry.`);
   }
 };
 
