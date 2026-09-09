@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.1.5";
+const BUILD_VERSION="8.1.6";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
@@ -319,8 +319,9 @@ async function ensureToken(){if(S.driveToken&&Date.now()<S.driveTokenExpiry-6000
 async function driveFetch(url,opt={}){
   const token=await ensureToken(),h=new Headers(opt.headers||{});h.set("Authorization",`Bearer ${token}`);
   const r=await fetch(url,{...opt,headers:h}),t=await r.text();let b={};try{b=JSON.parse(t)}catch{b={message:t}}
-  if(!r.ok)throw new Error(b?.error?.message||b.message||`Drive error ${r.status}`);return b;
+  if(!r.ok){const e=new Error(b?.error?.message||b.message||`Drive error ${r.status}`);e.status=r.status;e.driveReason=b?.error?.errors?.[0]?.reason||"";throw e}return b;
 }
+function isMissingDriveObject(e){return e?.status===404||/object can not be found|object cannot be found|file not found/i.test(e?.message||"")}
 function escQ(s){return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'")}
 async function findFolder(name,parentId){
   const q=`name='${escQ(name)}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
@@ -340,12 +341,23 @@ async function getFolder(name,parentId){return await findFolder(name,parentId)||
 async function getEvidenceRoot(){
   const savedId=localStorage.getItem("motEvidenceRootFolderId");
   if(savedId){
-    try{await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(savedId)}?fields=id`);return{id:savedId,name:"MOT Evidence"}}
+    try{
+      const saved=await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(savedId)}?fields=id,name,mimeType,trashed,capabilities(canAddChildren)`);
+      if(!saved.trashed&&saved.mimeType==="application/vnd.google-apps.folder"&&saved.capabilities?.canAddChildren!==false)return saved;
+      localStorage.removeItem("motEvidenceRootFolderId");
+    }
     catch{localStorage.removeItem("motEvidenceRootFolderId")}
   }
   const folder=await createFolder("MOT Evidence");
   localStorage.setItem("motEvidenceRootFolderId",folder.id);
   return folder;
+}
+async function createArchiveFolder(reg){
+  const root=await getEvidenceRoot();
+  const day=await getFolder(dateFolder(),root.id);
+  const vehicleFolderName=await nextAttemptName(reg,day.id);
+  const folder=await createFolder(vehicleFolderName,day.id);
+  return{folder,vehicleFolderName};
 }
 async function uploadBlob(blob,filename,parentId,mimeType){
   const metadata={name:filename,parents:[parentId],mimeType},boundary="mot_"+crypto.randomUUID().replace(/-/g,""),enc=new TextEncoder();
@@ -415,10 +427,15 @@ $("uploadDrive").onclick=async()=>{
   try{
     status("uploadStatus","warn","Connecting to Google Drive…");
     await ensureToken();
-    const root=await getEvidenceRoot();
-    const day=await getFolder(dateFolder(),root.id);
-    const reg=cleanReg($("reg").value),vehicleFolderName=await nextAttemptName(reg,day.id);
-    const vf=await createFolder(vehicleFolderName,day.id);
+    const reg=cleanReg($("reg").value);
+    let archive;
+    try{archive=await createArchiveFolder(reg)}catch(e){
+      if(!isMissingDriveObject(e))throw e;
+      localStorage.removeItem("motEvidenceRootFolderId");
+      status("uploadStatus","warn","Repairing the Google Drive evidence folder…");
+      archive=await createArchiveFolder(reg);
+    }
+    const vf=archive.folder,vehicleFolderName=archive.vehicleFolderName;
 
     const files=[
       [1,"01-Vehicle.jpg"],[2,"02-VIN.jpg"],[3,"03-Mileage.jpg"],
