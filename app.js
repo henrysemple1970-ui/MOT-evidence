@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.1.7";
+const BUILD_VERSION="8.1.8";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
@@ -316,10 +316,16 @@ async function connectDrive(){
 }
 if($("connectDrive")) $("connectDrive").onclick=async()=>{try{await connectDrive()}catch(e){status("connectionStatus","bad",e.message)}};
 async function ensureToken(){if(S.driveToken&&Date.now()<S.driveTokenExpiry-60000)return S.driveToken;return connectDrive()}
-async function driveFetch(url,opt={}){
+async function driveFetch(url,opt={},timeoutMs=45000){
   const token=await ensureToken(),h=new Headers(opt.headers||{});h.set("Authorization",`Bearer ${token}`);
-  const r=await fetch(url,{...opt,headers:h}),t=await r.text();let b={};try{b=JSON.parse(t)}catch{b={message:t}}
-  if(!r.ok){const e=new Error(b?.error?.message||b.message||`Drive error ${r.status}`);e.status=r.status;e.driveReason=b?.error?.errors?.[0]?.reason||"";throw e}return b;
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const r=await fetch(url,{...opt,headers:h,signal:controller.signal}),t=await r.text();let b={};try{b=JSON.parse(t)}catch{b={message:t}}
+    if(!r.ok){const e=new Error(b?.error?.message||b.message||`Drive error ${r.status}`);e.status=r.status;e.driveReason=b?.error?.errors?.[0]?.reason||"";throw e}return b;
+  }catch(e){
+    if(e?.name==="AbortError"){const timeout=new Error("Google Drive did not respond within 45 seconds.");timeout.code="DRIVE_TIMEOUT";throw timeout}
+    throw e;
+  }finally{clearTimeout(timer)}
 }
 function isMissingDriveObject(e){return e?.status===404||/object can not be found|object cannot be found|file not found/i.test(e?.message||"")}
 function escQ(s){return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'")}
@@ -373,6 +379,18 @@ async function uploadBlob(blob,filename,parentId,mimeType){
     try{await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`,{method:"DELETE"})}catch{}
     throw e;
   }
+}
+async function uploadBlobWithRetry(blob,filename,parentId,mimeType,onAttempt){
+  let lastError;
+  for(let attempt=1;attempt<=3;attempt++){
+    try{onAttempt?.(attempt);return await uploadBlob(blob,filename,parentId,mimeType)}
+    catch(e){
+      lastError=e;
+      if(attempt===3||(!e?.code&&e?.status&&e.status<500&&e.status!==408&&e.status!==429))throw e;
+      await new Promise(resolve=>setTimeout(resolve,attempt*1000));
+    }
+  }
+  throw lastError;
 }
 function dateFolder(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
 async function nextAttemptName(reg,parentId){
@@ -433,6 +451,7 @@ function evidenceSummary(){
 $("uploadDrive").onclick=async()=>{
   update();const reasons=readyReasons();if(reasons.length)return status("uploadStatus","bad","Complete: "+reasons.join(", "));
   let uploadStage="connecting to Google Drive";
+  $("uploadDrive").disabled=true;
   try{
     status("uploadStatus","warn","Connecting to Google Drive…");
     await ensureToken();
@@ -452,10 +471,12 @@ $("uploadDrive").onclick=async()=>{
       [4,"04-Emissions.jpg"],[5,"05-Brake-Test.jpg"]
     ].filter(([n])=>!!S.photos[n]);
 
-    for(const [n,name] of files){
+    for(let i=0;i<files.length;i++){
+      const [n,name]=files[i];
       uploadStage=`uploading ${name}`;
-      status("uploadStatus","warn",`Uploading ${name}…`);
-      await uploadBlob(S.photos[n],name,vf.id,"image/jpeg");
+      await uploadBlobWithRetry(S.photos[n],name,vf.id,"image/jpeg",attempt=>{
+        status("uploadStatus","warn",`Uploading photo ${i+1} of ${files.length} — ${name} (attempt ${attempt} of 3)…`);
+      });
     }
     const summaryBlob=new Blob([JSON.stringify(evidenceSummary(),null,2)],{type:"application/json"});
     uploadStage="uploading the evidence summary";
@@ -473,6 +494,8 @@ $("uploadDrive").onclick=async()=>{
   }catch(e){
     const detail=e?.name&&e.name!=="Error"?`${e.name}: ${e.message}`:e.message;
     status("uploadStatus","bad",`Upload failed while ${uploadStage}: ${detail}. Local photos have been retained for retry.`);
+  }finally{
+    if(currentScreen==="review")$("uploadDrive").disabled=readyReasons().length>0;
   }
 };
 
