@@ -1,7 +1,7 @@
-const BUILD_VERSION="8.1.10";
+const BUILD_VERSION="8.1.11";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
-  photos:{},coords:null,driveToken:null,driveTokenExpiry:0,driveRootId:null,
+  photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
   motVehicle:null,latestTest:null,regChecked:false,
   emissions:{code:"UNKNOWN",label:"Check registration",reason:"Vehicle has not been checked yet.",photoRequired:true}
 };
@@ -365,25 +365,37 @@ async function createArchiveFolder(reg){
   const folder=await createFolder(vehicleFolderName,day.id);
   return{folder,vehicleFolderName};
 }
-async function getDriveRootId(){
-  if(S.driveRootId)return S.driveRootId;
-  const root=await driveFetch("https://www.googleapis.com/drive/v3/files/root?fields=id");
-  S.driveRootId=root.id;return root.id;
-}
-async function driveUploadMedia(blob,mimeType,onProgress){
+async function driveUploadMedia(blob,filename,parentId,mimeType,onProgress){
   const token=await ensureToken();
   let bytes;
   try{bytes=await blob.arrayBuffer()}catch{throw new Error("The photo could not be prepared for upload. Retake this photo and try again.")}
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);
+  let session;
+  try{
+    const response=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,parents",{
+      method:"POST",signal:controller.signal,
+      headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json","X-Upload-Content-Type":mimeType,"X-Upload-Content-Length":String(bytes.byteLength)},
+      body:JSON.stringify({name:filename,parents:[parentId],mimeType})
+    });
+    if(!response.ok){
+      const body=await response.json();const error=new Error(body?.error?.message||`Drive error ${response.status}`);error.status=response.status;throw error;
+    }
+    session=response.headers.get("Location");
+    if(!session)throw new Error("Google Drive did not return an upload session.");
+  }finally{clearTimeout(timer)}
   return new Promise((resolve,reject)=>{
     const x=new XMLHttpRequest();
-    x.open("POST","https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id,name");
+    x.open("PUT",session);
     x.timeout=90000;
     x.setRequestHeader("Authorization",`Bearer ${token}`);
     x.setRequestHeader("Content-Type",mimeType);
     x.upload.onprogress=e=>{if(e.lengthComputable)onProgress?.(Math.round((e.loaded/e.total)*100))};
     x.onload=()=>{
       let body={};try{body=JSON.parse(x.responseText||"{}")}catch{body={message:x.responseText}}
-      if(x.status>=200&&x.status<300)return resolve(body);
+      if(x.status>=200&&x.status<300){
+        if(!body.id||Number(body.size)!==bytes.byteLength||!body.parents?.includes(parentId))return reject(new Error("Drive did not confirm the complete file in the vehicle folder."));
+        return resolve(body);
+      }
       const error=new Error(body?.error?.message||body.message||`Drive error ${x.status}`);error.status=x.status;reject(error);
     };
     x.onerror=()=>reject(new Error("The iPhone lost its connection while sending the photo."));
@@ -392,20 +404,7 @@ async function driveUploadMedia(blob,mimeType,onProgress){
   });
 }
 async function uploadBlob(blob,filename,parentId,mimeType,onProgress){
-  let file;
-  try{
-    // Materialise the canvas Blob and send ordinary bytes with XHR. This avoids
-    // iPhone Safari's fetch/Blob streaming stall while retaining Drive's simple upload.
-    file=await driveUploadMedia(blob,mimeType,onProgress);
-    const rootId=await getDriveRootId();
-    const move=`addParents=${encodeURIComponent(parentId)}&removeParents=${encodeURIComponent(rootId)}&fields=id,name`;
-    return await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?${move}`,{
-      method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:filename})
-    });
-  }catch(e){
-    if(file?.id)try{await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`,{method:"DELETE"})}catch{}
-    throw e;
-  }
+  return driveUploadMedia(blob,filename,parentId,mimeType,onProgress);
 }
 async function uploadBlobWithRetry(blob,filename,parentId,mimeType,onProgress){
   let lastError;
