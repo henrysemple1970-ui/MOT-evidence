@@ -1,7 +1,7 @@
-const BUILD_VERSION="8.1.8";
+const BUILD_VERSION="8.1.9";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
-  photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
+  photos:{},coords:null,driveToken:null,driveTokenExpiry:0,driveRootId:null,
   motVehicle:null,latestTest:null,regChecked:false,
   emissions:{code:"UNKNOWN",label:"Check registration",reason:"Vehicle has not been checked yet.",photoRequired:true}
 };
@@ -365,18 +365,26 @@ async function createArchiveFolder(reg){
   const folder=await createFolder(vehicleFolderName,day.id);
   return{folder,vehicleFolderName};
 }
+async function getDriveRootId(){
+  if(S.driveRootId)return S.driveRootId;
+  const root=await driveFetch("https://www.googleapis.com/drive/v3/files/root?fields=id");
+  S.driveRootId=root.id;return root.id;
+}
 async function uploadBlob(blob,filename,parentId,mimeType){
-  const file=await driveFetch("https://www.googleapis.com/drive/v3/files?fields=id,name",{
-    method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({name:filename,parents:[parentId],mimeType})
-  });
+  let file;
   try{
-    await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(file.id)}?uploadType=media`,{
-      method:"PATCH",headers:{"Content-Type":mimeType},body:blob
+    // iPhone Safari can stall when a Blob is sent with PATCH. Upload the bytes
+    // first with Drive's simple POST, then move/rename the completed file.
+    file=await driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id,name",{
+      method:"POST",headers:{"Content-Type":mimeType},body:blob
+    },90000);
+    const rootId=await getDriveRootId();
+    const move=`addParents=${encodeURIComponent(parentId)}&removeParents=${encodeURIComponent(rootId)}&fields=id,name`;
+    return await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?${move}`,{
+      method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:filename})
     });
-    return file;
   }catch(e){
-    try{await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`,{method:"DELETE"})}catch{}
+    if(file?.id)try{await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`,{method:"DELETE"})}catch{}
     throw e;
   }
 }
