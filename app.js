@@ -1,4 +1,4 @@
-const BUILD_VERSION="8.1.9";
+const BUILD_VERSION="8.1.10";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
   photos:{},coords:null,driveToken:null,driveTokenExpiry:0,driveRootId:null,
@@ -370,14 +370,33 @@ async function getDriveRootId(){
   const root=await driveFetch("https://www.googleapis.com/drive/v3/files/root?fields=id");
   S.driveRootId=root.id;return root.id;
 }
-async function uploadBlob(blob,filename,parentId,mimeType){
+async function driveUploadMedia(blob,mimeType,onProgress){
+  const token=await ensureToken();
+  let bytes;
+  try{bytes=await blob.arrayBuffer()}catch{throw new Error("The photo could not be prepared for upload. Retake this photo and try again.")}
+  return new Promise((resolve,reject)=>{
+    const x=new XMLHttpRequest();
+    x.open("POST","https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id,name");
+    x.timeout=90000;
+    x.setRequestHeader("Authorization",`Bearer ${token}`);
+    x.setRequestHeader("Content-Type",mimeType);
+    x.upload.onprogress=e=>{if(e.lengthComputable)onProgress?.(Math.round((e.loaded/e.total)*100))};
+    x.onload=()=>{
+      let body={};try{body=JSON.parse(x.responseText||"{}")}catch{body={message:x.responseText}}
+      if(x.status>=200&&x.status<300)return resolve(body);
+      const error=new Error(body?.error?.message||body.message||`Drive error ${x.status}`);error.status=x.status;reject(error);
+    };
+    x.onerror=()=>reject(new Error("The iPhone lost its connection while sending the photo."));
+    x.ontimeout=()=>{const error=new Error("Google Drive did not receive the photo within 90 seconds.");error.code="DRIVE_TIMEOUT";reject(error)};
+    x.send(bytes);
+  });
+}
+async function uploadBlob(blob,filename,parentId,mimeType,onProgress){
   let file;
   try{
-    // iPhone Safari can stall when a Blob is sent with PATCH. Upload the bytes
-    // first with Drive's simple POST, then move/rename the completed file.
-    file=await driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=media&fields=id,name",{
-      method:"POST",headers:{"Content-Type":mimeType},body:blob
-    },90000);
+    // Materialise the canvas Blob and send ordinary bytes with XHR. This avoids
+    // iPhone Safari's fetch/Blob streaming stall while retaining Drive's simple upload.
+    file=await driveUploadMedia(blob,mimeType,onProgress);
     const rootId=await getDriveRootId();
     const move=`addParents=${encodeURIComponent(parentId)}&removeParents=${encodeURIComponent(rootId)}&fields=id,name`;
     return await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?${move}`,{
@@ -388,10 +407,13 @@ async function uploadBlob(blob,filename,parentId,mimeType){
     throw e;
   }
 }
-async function uploadBlobWithRetry(blob,filename,parentId,mimeType,onAttempt){
+async function uploadBlobWithRetry(blob,filename,parentId,mimeType,onProgress){
   let lastError;
   for(let attempt=1;attempt<=3;attempt++){
-    try{onAttempt?.(attempt);return await uploadBlob(blob,filename,parentId,mimeType)}
+    try{
+      onProgress?.(attempt,0);
+      return await uploadBlob(blob,filename,parentId,mimeType,percent=>onProgress?.(attempt,percent));
+    }
     catch(e){
       lastError=e;
       if(attempt===3||(!e?.code&&e?.status&&e.status<500&&e.status!==408&&e.status!==429))throw e;
@@ -482,14 +504,15 @@ $("uploadDrive").onclick=async()=>{
     for(let i=0;i<files.length;i++){
       const [n,name]=files[i];
       uploadStage=`uploading ${name}`;
-      await uploadBlobWithRetry(S.photos[n],name,vf.id,"image/jpeg",attempt=>{
-        status("uploadStatus","warn",`Uploading photo ${i+1} of ${files.length} — ${name} (attempt ${attempt} of 3)…`);
+      await uploadBlobWithRetry(S.photos[n],name,vf.id,"image/jpeg",(attempt,percent)=>{
+        const progress=percent?` — ${percent}%`:"";
+        status("uploadStatus","warn",`Uploading photo ${i+1} of ${files.length} — ${name}${progress} (attempt ${attempt} of 3)…`);
       });
     }
     const summaryBlob=new Blob([JSON.stringify(evidenceSummary(),null,2)],{type:"application/json"});
     uploadStage="uploading the evidence summary";
     status("uploadStatus","warn","Uploading evidence summary…");
-    await uploadBlob(summaryBlob,"06-Evidence-Summary.json",vf.id,"application/json");
+    await uploadBlobWithRetry(summaryBlob,"06-Evidence-Summary.json",vf.id,"application/json");
 
     const archivedPath=`MOT Evidence / ${dateFolder()} / ${vehicleFolderName}`;
     const completedAt=new Date(),evidenceCount=files.length,makeModel=[S.motVehicle?.make,S.motVehicle?.model].filter(Boolean).join(" ")||"—";
