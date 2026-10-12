@@ -1,7 +1,7 @@
-const BUILD_VERSION="8.1.11";
+const BUILD_VERSION="8.1.12";
 const RECOVERY_DB="mot-evidence-recovery-v1";
 const S={
-  photos:{},coords:null,driveToken:null,driveTokenExpiry:0,
+  photos:{},photoBytes:{},coords:null,driveToken:null,driveTokenExpiry:0,
   motVehicle:null,latestTest:null,regChecked:false,
   emissions:{code:"UNKNOWN",label:"Check registration",reason:"Vehicle has not been checked yet.",photoRequired:true}
 };
@@ -26,7 +26,8 @@ function startNewTest(){resetForNextTest();clearRecovery();showScreen("vehicle")
 function openRecoveryDb(){return new Promise((resolve,reject)=>{const q=indexedDB.open(RECOVERY_DB,1);q.onupgradeneeded=()=>q.result.createObjectStore("tests");q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)})}
 async function saveRecovery(){
   try{
-    const db=await openRecoveryDb(),data={savedAt:new Date().toISOString(),screen:currentScreen,photos:S.photos,coords:S.coords,motVehicle:S.motVehicle,latestTest:S.latestTest,regChecked:S.regChecked,emissions:S.emissions,reg:cleanReg($("reg")?.value),checks:{confirmReg:!!$("confirmReg")?.checked,emissionsOther:!!$("emissionsOther")?.checked,brakeOther:!!$("brakeOther")?.checked,allowDuplicate:!!$("allowDuplicate")?.checked}};
+    const savedPhotos={...S.photos,...S.photoBytes};
+    const db=await openRecoveryDb(),data={savedAt:new Date().toISOString(),screen:currentScreen,photos:savedPhotos,coords:S.coords,motVehicle:S.motVehicle,latestTest:S.latestTest,regChecked:S.regChecked,emissions:S.emissions,reg:cleanReg($("reg")?.value),checks:{confirmReg:!!$("confirmReg")?.checked,emissionsOther:!!$("emissionsOther")?.checked,brakeOther:!!$("brakeOther")?.checked,allowDuplicate:!!$("allowDuplicate")?.checked}};
     await new Promise((resolve,reject)=>{const t=db.transaction("tests","readwrite"),q=t.objectStore("tests").put(data,"active");q.onsuccess=resolve;q.onerror=()=>reject(q.error)});db.close();
   }catch(e){console.warn("Recovery save unavailable",e)}
 }
@@ -36,6 +37,10 @@ async function restoreRecovery(){
     const db=await openRecoveryDb(),data=await new Promise((resolve,reject)=>{const q=db.transaction("tests").objectStore("tests").get("active");q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error)});db.close();
     if(!data?.reg)return false;
     S.photos=data.photos||{};S.coords=data.coords||null;S.motVehicle=data.motVehicle||null;S.latestTest=data.latestTest||null;S.regChecked=!!data.regChecked;S.emissions=data.emissions||S.emissions;
+    S.photoBytes={};
+    for(const [n,photo] of Object.entries(S.photos))if(photo instanceof ArrayBuffer){
+      S.photoBytes[n]=photo;S.photos[n]=new Blob([photo],{type:"image/jpeg"});
+    }
     $("reg").value=data.reg;for(const [id,value] of Object.entries(data.checks||{}))if($(id))$(id).checked=!!value;
     for(let n=1;n<=5;n++)if(S.photos[n]){$("i"+n).src=URL.createObjectURL(S.photos[n]);$("i"+n).classList.remove("hidden");if(n<=3)$("next"+n)?.classList.remove("hidden");const b=document.querySelector(`button[data-p="${n}"]`);if(b)b.textContent=`Retake Photo ${n}`}
     if(S.regChecked){status("regCheckStatus","good",`${S.motVehicle?.make||""} ${S.motVehicle?.model||""} • recovered DVSA-checked vehicle.`);updateEmissionsUI()}
@@ -273,7 +278,7 @@ for(let n=1;n<=5;n++){
   $("p"+n).onchange=async e=>{
     const f=e.target.files[0];if(!f)return;
     if(!cleanReg($("reg").value)){e.target.value="";return alert("Enter the registration first.");}
-    const out=await watermark(f,n);S.photos[n]=out.blob;
+    const out=await watermark(f,n);S.photos[n]=out.blob;S.photoBytes[n]=out.bytes;
     $("i"+n).src=out.url;$("i"+n).classList.remove("hidden");
     const captureButton=document.querySelector(`button[data-p="${n}"]`);if(captureButton)captureButton.textContent=`Retake Photo ${n}`;
     if(n===4 && $("emissionsOther").checked) $("emissionsOther").checked=false;
@@ -295,8 +300,11 @@ async function watermark(file,n){
   const fs=Math.max(24,Math.round(c.width/42)),lh=fs*1.25,pad=fs*.65,bh=lines.length*lh+pad*2;
   x.fillStyle="rgba(0,0,0,.68)";x.fillRect(0,c.height-bh,c.width,bh);x.fillStyle="white";x.font=`600 ${fs}px -apple-system`;
   lines.forEach((t,i)=>x.fillText(t,pad,c.height-bh+pad+fs+i*lh));
-  const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.82));
-  return{blob,url:URL.createObjectURL(blob)}
+  const encoded=c.toDataURL("image/jpeg",.82).split(",")[1],binary=atob(encoded);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+  const blob=new Blob([bytes],{type:"image/jpeg"});
+  return{blob,bytes:bytes.buffer,url:URL.createObjectURL(blob)}
 }
 
 async function connectDrive(){
@@ -365,10 +373,19 @@ async function createArchiveFolder(reg){
   const folder=await createFolder(vehicleFolderName,day.id);
   return{folder,vehicleFolderName};
 }
+async function readEvidenceBytes(photo){
+  if(photo instanceof ArrayBuffer)return photo;
+  if(typeof photo?.arrayBuffer==="function")try{return await photo.arrayBuffer()}catch{}
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=()=>reject(new Error(`Stored photo cannot be read (${reader.error?.name||"read error"}). Retake this photo.`));
+    reader.readAsArrayBuffer(photo);
+  });
+}
 async function driveUploadMedia(blob,filename,parentId,mimeType,onProgress){
   const token=await ensureToken();
-  let bytes;
-  try{bytes=await blob.arrayBuffer()}catch{throw new Error("The photo could not be prepared for upload. Retake this photo and try again.")}
+  const bytes=await readEvidenceBytes(blob);
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);
   let session;
   try{
@@ -485,6 +502,13 @@ $("uploadDrive").onclick=async()=>{
     status("uploadStatus","warn","Connecting to Google Drive…");
     await ensureToken();
     const reg=cleanReg($("reg").value);
+    for(const [n,photo] of Object.entries(S.photos)){
+      uploadStage=`reading Photo ${n} on this device`;
+      status("uploadStatus","warn",`Checking saved Photo ${n}…`);
+      S.photoBytes[n]=await readEvidenceBytes(S.photoBytes[n]||photo);
+      if(!S.photoBytes[n].byteLength)throw new Error(`Photo ${n} is empty. Retake this photo.`);
+    }
+    await saveRecovery();
     let archive;
     uploadStage="preparing the Drive archive folder";
     try{archive=await createArchiveFolder(reg)}catch(e){
@@ -503,7 +527,7 @@ $("uploadDrive").onclick=async()=>{
     for(let i=0;i<files.length;i++){
       const [n,name]=files[i];
       uploadStage=`uploading ${name}`;
-      await uploadBlobWithRetry(S.photos[n],name,vf.id,"image/jpeg",(attempt,percent)=>{
+      await uploadBlobWithRetry(S.photoBytes[n],name,vf.id,"image/jpeg",(attempt,percent)=>{
         const progress=percent?` — ${percent}%`:"";
         status("uploadStatus","warn",`Uploading photo ${i+1} of ${files.length} — ${name}${progress} (attempt ${attempt} of 3)…`);
       });
@@ -530,7 +554,7 @@ $("uploadDrive").onclick=async()=>{
 };
 
 function clearLocalPhotos(showStatus=true){
-  S.photos={};
+  S.photos={};S.photoBytes={};
   for(let n=1;n<=5;n++){
     $("p"+n).value="";
     $("i"+n).removeAttribute("src");
